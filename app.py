@@ -5,7 +5,6 @@ import types
 # ==========================================
 # 🛑 FORCE INITIALIZE GLOBAL EVENT LOOP FOR PYTHON 3.14
 # ==========================================
-# Build global asynchronous orchestration maps before ANY module resolution paths trace triggers
 try:
     loop = asyncio.get_event_loop()
 except RuntimeError:
@@ -33,7 +32,6 @@ BOT_TOKEN = "8492099684:AAH2lszBjqcZj5bmr_ouvzWKNi32FOUnuWc"
 ADMIN_ID = 2066626554               
 TARGET_CHANNEL_ID = -1003880366972  
 
-# Loop allocation parameters mapped right inside instantiation core bounds properties
 bot = Client("simple_pay_bot", api_id=API_ID, api_hash=API_HASH, bot_token=BOT_TOKEN)
 
 user_billing_state = {}
@@ -82,7 +80,8 @@ async def instruct_user_inputs(client: Client, callback: CallbackQuery):
     )
     await callback.answer()
 
-@bot.on_message((filters.text | filters.photo) & filters.private & ~filters.command)
+# FIX: Added () to filters.command to invoke structural object instantiation instantiation mapping evaluation
+@bot.on_message((filters.text | filters.photo) & filters.private & ~filters.command())
 async def forward_to_admin_manual_check(client: Client, message: Message):
     user_id = message.from_user.id
     
