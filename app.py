@@ -1,4 +1,6 @@
 import asyncio
+import re
+import sys
 from pyrogram import Client, filters
 from pyrogram.types import InlineKeyboardMarkup, InlineKeyboardButton, Message, CallbackQuery
 
@@ -13,7 +15,6 @@ TARGET_CHANNEL_ID = -1003880366972  # ⚠️ Enter your Premium Channel/Group ID
 
 bot = Client("simple_pay_bot", api_id=API_ID, api_hash=API_HASH, bot_token=BOT_TOKEN)
 
-# Temporary runtime storage to track current active approval sequences context maps
 pending_requests = {}
 
 # ==========================================
@@ -38,7 +39,6 @@ async def show_qr_handler(client: Client, callback: CallbackQuery):
     keyboard = InlineKeyboardMarkup([
         [InlineKeyboardButton("✅ I Have Paid", callback_data="confirm_paid")]
     ])
-    # You can alternatively use send_photo if you want to push a specific QR image asset link directly
     await callback.message.reply_text(
         "🤖 **Payment Details Gateway Ledger**:\n\n"
         "▫️ **UPI ID:** `safehands@ibl`\n"
@@ -58,16 +58,14 @@ async def instruct_user_inputs(client: Client, callback: CallbackQuery):
     )
     await callback.answer()
 
-# Catching text and photo details to pipe to Admin Manual Logs Channel View Dashboard
 @bot.on_message((filters.text | filters.photo) & filters.private)
 async def forward_to_admin_manual_check(client: Client, message: Message):
     if message.from_user.id == ADMIN_ID:
-        return # Skip processing actions if admin themselves inputs data streams 
+        return 
 
     user_ref = message.from_user.id
     username_ref = f"@{message.from_user.username}" if message.from_user.username else "No Username"
     
-    # Store request snapshot state contexts
     pending_requests[user_ref] = {
         "user_id": user_ref,
         "username": username_ref
@@ -78,7 +76,6 @@ async def forward_to_admin_manual_check(client: Client, message: Message):
         [InlineKeyboardButton("❌ Reject Payment", callback_data=f"reject_{user_ref}")]
     ])
 
-    # Dynamic log output indicators notification dispatch targeting owner space console directly
     await bot.send_message(
         chat_id=ADMIN_ID,
         text=f"💰 **New Manual Verification Request Pending!**\n\n"
@@ -88,9 +85,8 @@ async def forward_to_admin_manual_check(client: Client, message: Message):
              f"👇 Review data submission payloads images logs trace parameters matching criteria. Trigger operational status down below:",
         reply_markup=admin_keyboard
     )
-    # Forward the incoming transaction proof log payload directly over to administrative desk workspace interface tracking parameters
     await message.forward(chat_id=ADMIN_ID)
-    await message.reply_text("⏳ **Submission Forwarded Successfully!** Admin pipeline verification team checks entries records data. Please hold tracking state indicators limits loops updates.")
+    await message.reply_text("⏳ **Submission Forwarded Successfully!** Admin pipeline verification checks entries records data. Please hold tracking state.")
 
 @bot.on_callback_query(filters.regex(r"^(approve|reject)_\d+$"))
 async def execution_routing_control_switches(client: Client, callback: CallbackQuery):
@@ -99,7 +95,6 @@ async def execution_routing_control_switches(client: Client, callback: CallbackQ
 
     if action == "approve":
         try:
-            # Dynamically auto generate single 1-time usable membership invite link that automatically caps 1 entry parameters bounds checks
             invite_link_payload = await bot.create_chat_invite_link(
                 chat_id=TARGET_CHANNEL_ID,
                 member_limit=1
@@ -108,26 +103,36 @@ async def execution_routing_control_switches(client: Client, callback: CallbackQ
             await bot.send_message(
                 chat_id=target_user_id,
                 text=f"🎉 **Payment Verified Successfully!**\n\n"
-                     f"Welcome ❤️ Click the authentic single use tracking confirmation profile node link below to access premium spaces:\n\n"
+                     f"Welcome ❤️ Click the link below to access premium spaces:\n\n"
                      f"👉 {invite_link_payload.invite_link}\n\n"
-                     f"⚠️ _Note: This URL tracks individual entry validation markers. Access links break state verification targets upon registration execution loops parameters metrics checks._"
+                     f"⚠️ _Note: This URL works for 1 single person join execution loop parameter check._"
             )
-            await callback.message.edit_text(f"✅ Verified User Context `{target_user_id}` Access Clearance. Single dynamic link issued.")
+            await callback.message.edit_text(f"✅ Verified User Context `{target_user_id}` Access Clearance. Link issued.")
         except Exception as dynamic_failure_exception:
             await callback.message.edit_text(f"❌ **Link Execution Exception Error:** {dynamic_failure_exception}")
 
     elif action == "reject":
         await bot.send_message(
             chat_id=target_user_id,
-            text="❌ **Payment Rejected!**\n\nReason profile mapping fails verification matching bounds standards check definitions parameters. Please press Support connection options lines logs profile tracker to correct tracking variables inputs records structure instantly."
+            text="❌ **Payment Rejected!**\n\nReason profile mapping fails verification matching bounds standards check parameters. Please support connection options to check tracking layout variables."
         )
-        await callback.message.edit_text(f"❌ Rejected Transaction Registration Logs Track Context For User Identification: `{target_user_id}`")
+        await callback.message.edit_text(f"❌ Rejected Transaction Registration Logs for User: `{target_user_id}`")
         
     await callback.answer()
 
 # ==========================================
-# 🚀 INITIALIZATION EXECUTOR ENGINE KICKSTART
+# 🚀 FIX: ASYNCIO EVENT LOOP INJECTOR RUNNER
 # ==========================================
-if __name__ == "__main__":
+async def main():
     print("🔥 Single Bot Manual Approvals Infrastructure Booting Context System States...")
-    bot.run()
+    await bot.start()
+    # Keep the engine open asynchronously without thread crash properties
+    await asyncio.Event().wait()
+
+if __name__ == "__main__":
+    # Custom high level platform loop engine setup matching Python 3.14 profiles
+    try:
+        asyncio.run(main())
+    except (KeyboardInterrupt, SystemExit):
+        pass
+        
