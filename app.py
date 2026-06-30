@@ -32,7 +32,7 @@ API_ID = 34042874
 API_HASH = "494b9f740bc2f8f0e1a17c1c9f27ed9c"          
 BOT_TOKEN = "8492099684:AAH2lszBjqcZj5bmr_ouvzWKNi32FOUnuWc"        
 ADMIN_ID = 2066626554               
-TARGET_CHANNEL_ID = -1002255752986  
+TARGET_CHANNEL_ID = -1001522411163  
 
 bot = Client("simple_pay_bot", api_id=API_ID, api_hash=API_HASH, bot_token=BOT_TOKEN)
 
