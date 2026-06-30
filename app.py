@@ -1,17 +1,30 @@
 import asyncio
-import re
 import sys
+
+# ==========================================
+# 🛑 CORE HOTFIX FOR PYTHON 3.14 LOOP ISSUES
+# ==========================================
+try:
+    loop = asyncio.get_event_loop()
+except RuntimeError:
+    loop = asyncio.new_event_loop()
+    asyncio.set_event_loop(loop)
+
+# Prevent pyrogram from loading internal crashing sync logic engines
+sys.modules["pyrogram.sync"] = None 
+
+import re
 from pyrogram import Client, filters
 from pyrogram.types import InlineKeyboardMarkup, InlineKeyboardButton, Message, CallbackQuery
 
 # ==========================================
-# ⚙️ CONFIGURATION SETTINGS PIPELINE
+# ⚙️ CONFIGURATION SETTINGS PIPELINE (INJECTED)
 # ==========================================
-API_ID = 34042874                   # ⚠️ Enter your Telegram API ID
-API_HASH = "494b9f740bc2f8f0e1a17c1c9f27ed9c"          # ⚠️ Enter your Telegram API Hash
-BOT_TOKEN = "8492099684:AAH2lszBjqcZj5bmr_ouvzWKNi32FOUnuWc"        # ⚠️ Enter your Bot Token
-ADMIN_ID = 2066626554               # ⚠️ Enter your personal Numeric Telegram ID
-TARGET_CHANNEL_ID = -1003880366972  # ⚠️ Enter your Premium Channel/Group ID
+API_ID = 34042874                   
+API_HASH = "494b9f740bc2f8f0e1a17c1c9f27ed9c"          
+BOT_TOKEN = "8492099684:AAH2lszBjqcZj5bmr_ouvzWKNi32FOUnuWc"        
+ADMIN_ID = 2066626554               
+TARGET_CHANNEL_ID = -1003880366972  
 
 bot = Client("simple_pay_bot", api_id=API_ID, api_hash=API_HASH, bot_token=BOT_TOKEN)
 
@@ -80,7 +93,7 @@ async def forward_to_admin_manual_check(client: Client, message: Message):
         chat_id=ADMIN_ID,
         text=f"💰 **New Manual Verification Request Pending!**\n\n"
              f"👤 **User Name:** {message.from_user.first_name}\n"
-             f"🆔 **User Index Identification ID:** `{user_ref}`\n"
+             f"🆔 **User Index ID:** `{user_ref}`\n"
              f"🌐 **Handle Profile:** {username_ref}\n\n"
              f"👇 Review data submission payloads images logs trace parameters matching criteria. Trigger operational status down below:",
         reply_markup=admin_keyboard
@@ -121,18 +134,12 @@ async def execution_routing_control_switches(client: Client, callback: CallbackQ
     await callback.answer()
 
 # ==========================================
-# 🚀 FIX: ASYNCIO EVENT LOOP INJECTOR RUNNER
+# 🚀 LIFECYCLE MANAGEMENT BOOTSTRAPPER
 # ==========================================
 async def main():
     print("🔥 Single Bot Manual Approvals Infrastructure Booting Context System States...")
     await bot.start()
-    # Keep the engine open asynchronously without thread crash properties
     await asyncio.Event().wait()
 
 if __name__ == "__main__":
-    # Custom high level platform loop engine setup matching Python 3.14 profiles
-    try:
-        asyncio.run(main())
-    except (KeyboardInterrupt, SystemExit):
-        pass
-        
+    loop.run_until_complete(main())
