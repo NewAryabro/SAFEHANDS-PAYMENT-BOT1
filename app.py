@@ -4,6 +4,7 @@ import types
 import time
 import sqlite3
 import re
+from datetime import datetime, timedelta  # <--- Injected safely for date conversions
 
 # ==========================================
 # 🛑 CORE PYTHON 3.14 EVENT LOOP & PYROGRAM SYNC HOTFIX
@@ -36,7 +37,7 @@ TARGET_CHANNEL_ID = -1003880366972
 bot = Client("simple_pay_bot", api_id=API_ID, api_hash=API_HASH, bot_token=BOT_TOKEN)
 
 # ==========================================
-# 🗄️ PERSISTENT DATABASE MANAGEMENT (THREAD-SAFE FIXED)
+# 🗄️ PERSISTENT DATABASE MANAGEMENT
 # ==========================================
 class Database:
     def __init__(self):
@@ -44,7 +45,6 @@ class Database:
         self.setup()
 
     def _get_conn(self):
-        # FIX 4: Explicit isolation pipeline instances logic avoids locked database exception trace
         conn = sqlite3.connect(self.db_path, timeout=30.0)
         return conn, conn.cursor()
 
@@ -81,7 +81,6 @@ class Database:
         return success
 
     def update_status_by_utr(self, utr, status):
-        # FIX 3: Safe target data lookups targeting specific UTR code definitions explicitly
         conn, cursor = self._get_conn()
         cursor.execute("UPDATE payments SET status = ? WHERE utr = ?", (status, utr))
         conn.commit()
@@ -116,7 +115,7 @@ async def start_handler(client: Client, message: Message):
 async def show_qr_handler(client: Client, callback: CallbackQuery):
     keyboard = InlineKeyboardMarkup([[InlineKeyboardButton("✅ I Have Paid", callback_data="confirm_paid")]])
     await callback.message.reply_text(
-        "🤖 **Payment Details Gateway Ledger**:\n\n▫️ **UPI ID:** `safehands@ibl`\n▫️ **Amount:** `₹99`\n\n📌 _Send payment details layout metrics code blocks parameters down below._",
+        "🤖 **Payment Details Gateway Ledger**:\n\n▫️ **UPI ID:** `telugumovies8985-1@oksbi`\n▫️ **Amount:** `₹99`\n\n📌 _Send payment screenshots and UTR context sequences properly maps down below._",
         reply_markup=keyboard
     )
     await callback.answer()
@@ -141,7 +140,6 @@ async def forward_to_admin_manual_check(client: Client, message: Message):
 
     content = message.text if message.text else message.caption
     if content:
-        # FIX 2: Dynamic parsing accepts standard Alphanumeric UTR models (e.g. T240..., AXIS..., 12-Digits numeric sequences)
         utr_match = re.search(r"\b[A-Za-z0-9]{8,22}\b", content)
         if utr_match:
             detected_utr = utr_match.group(0).upper()
@@ -151,7 +149,6 @@ async def forward_to_admin_manual_check(client: Client, message: Message):
                 return
             state["utr"] = detected_utr
 
-    # FIX 1: Access highest resolution file index mapping target `[-1]` dynamically to stop runtime crashing elements 
     if message.photo:
         state["photo"] = message.photo.file_id if hasattr(message.photo, 'file_id') else message.photo[-1].file_id
 
@@ -163,13 +160,11 @@ async def forward_to_admin_manual_check(client: Client, message: Message):
             await message.reply_text("⏳ UTR captured! Please dispatch your validation Image attachment capture right after.")
         return
 
-    # Commit transactions locking states right into DB lookup nodes parameters paths
     db.add_utr(state["utr"], user_id)
     user_billing_state.pop(user_id, None)
     
     username_ref = f"@{message.from_user.username}" if message.from_user.username else "No Username"
     
-    # FIX 3: Embed tracking variables code keys directly inside callback string layout pointers paths
     admin_keyboard = InlineKeyboardMarkup([
         [InlineKeyboardButton("✅ Give Access (Approve)", callback_data=f"approve_{state['utr']}_{user_id}")],
         [InlineKeyboardButton("❌ Reject Payment", callback_data=f"reject_{state['utr']}_{user_id}")]
@@ -193,7 +188,6 @@ async def forward_to_admin_manual_check(client: Client, message: Message):
 
 @bot.on_callback_query(filters.regex(r"^(approve|reject)_[A-Za-z0-9]{8,22}_\d+$"))
 async def execution_routing_control_switches(client: Client, callback: CallbackQuery):
-    # Parsing token arrays from parameters data strings mappings layout
     data_parts = callback.data.split("_")
     action = data_parts[0]
     target_utr = data_parts[1]
@@ -201,14 +195,15 @@ async def execution_routing_control_switches(client: Client, callback: CallbackQ
 
     if action == "approve":
         try:
-            expire_timestamp = int(time.time()) + 86400
+            # FIX: Int timestamp parsing logic completely replaced with accurate Python datetime entity objects 
+            expire_datetime_obj = datetime.now() + timedelta(days=1)
+            
             invite_link_payload = await bot.create_chat_invite_link(
                 chat_id=TARGET_CHANNEL_ID,
                 member_limit=1,
-                expire_date=expire_timestamp
+                expire_date=expire_datetime_obj  # <--- Injected datetime object safely
             )
             
-            # FIX 3: Target lookups lock execution status criteria matching entries mappings parameters
             db.update_status_by_utr(target_utr, "APPROVED")
             await bot.send_message(
                 chat_id=target_user_id,
