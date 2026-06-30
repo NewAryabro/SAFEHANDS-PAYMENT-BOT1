@@ -4,7 +4,7 @@ import types
 import time
 import sqlite3
 import re
-from datetime import datetime, timedelta  # <--- Injected safely for date conversions
+from datetime import datetime, timedelta
 
 # ==========================================
 # 🛑 CORE PYTHON 3.14 EVENT LOOP & PYROGRAM SYNC HOTFIX
@@ -26,13 +26,18 @@ from pyrogram import Client, filters
 from pyrogram.types import InlineKeyboardMarkup, InlineKeyboardButton, Message, CallbackQuery
 
 # ==========================================
-# ⚙️ SECURE CONFIGURATION CONFIG
+# ⚙️ SECURE CONFIGURATION CONFIG (UPDATED WITH CHANNELS)
 # ==========================================
 API_ID = 34042874                   
 API_HASH = "494b9f740bc2f8f0e1a17c1c9f27ed9c"          
 BOT_TOKEN = "8492099684:AAH2lszBjqcZj5bmr_ouvzWKNi32FOUnuWc"        
 ADMIN_ID = 2066626554               
+
+# ✅ Target Premium Space (Injected)
 TARGET_CHANNEL_ID = -1001522411163  
+
+# ✅ Dedicated Admin Logging Desk (Injected)
+LOG_CHANNEL_ID = -1003880366972     
 
 bot = Client("simple_pay_bot", api_id=API_ID, api_hash=API_HASH, bot_token=BOT_TOKEN)
 
@@ -115,7 +120,7 @@ async def start_handler(client: Client, message: Message):
 async def show_qr_handler(client: Client, callback: CallbackQuery):
     keyboard = InlineKeyboardMarkup([[InlineKeyboardButton("✅ I Have Paid", callback_data="confirm_paid")]])
     await callback.message.reply_text(
-        "🤖 **Payment Details Gateway Ledger**:\n\n▫️ **UPI ID:** `telugumovies8985-1@oksbi`\n▫️ **Amount:** `₹99`\n\n📌 _Send payment screenshots and UTR context sequences properly maps down below._",
+        "🤖 **Payment Details Gateway Ledger**:\n\n▫️ **UPI ID:** `safehands@ibl`\n▫️ **Amount:** `₹99`\n\n📌 _Send payment screenshots and UTR sequences down below._",
         reply_markup=keyboard
     )
     await callback.answer()
@@ -171,20 +176,21 @@ async def forward_to_admin_manual_check(client: Client, message: Message):
     ])
 
     admin_caption = (
-        f"💰 **New Verification Request!**\n\n"
+        f"💰 **New Verification Request Pending!**\n\n"
         f"👤 **User:** {message.from_user.first_name}\n"
         f"🆔 **ID:** `{user_id}`\n"
         f"🌐 **Handle:** {username_ref}\n"
         f"🔢 **UTR Ref:** `{state['utr']}`"
     )
 
+    # 📢 Logs routed completely straight to your specified Log Channel
     await bot.send_photo(
-        chat_id=ADMIN_ID,
+        chat_id=LOG_CHANNEL_ID,
         photo=state["photo"],
         caption=admin_caption,
         reply_markup=admin_keyboard
     )
-    await message.reply_text("⏳ **Submission Forwarded!** Admin is checking your details.")
+    await message.reply_text("⏳ **Submission Forwarded!** Admin verification team is checking details in logs channel.")
 
 @bot.on_callback_query(filters.regex(r"^(approve|reject)_[A-Za-z0-9]{8,22}_\d+$"))
 async def execution_routing_control_switches(client: Client, callback: CallbackQuery):
@@ -195,13 +201,12 @@ async def execution_routing_control_switches(client: Client, callback: CallbackQ
 
     if action == "approve":
         try:
-            # FIX: Int timestamp parsing logic completely replaced with accurate Python datetime entity objects 
             expire_datetime_obj = datetime.now() + timedelta(days=1)
             
             invite_link_payload = await bot.create_chat_invite_link(
                 chat_id=TARGET_CHANNEL_ID,
                 member_limit=1,
-                expire_date=expire_datetime_obj  # <--- Injected datetime object safely
+                expire_date=expire_datetime_obj
             )
             
             db.update_status_by_utr(target_utr, "APPROVED")
@@ -209,9 +214,9 @@ async def execution_routing_control_switches(client: Client, callback: CallbackQ
                 chat_id=target_user_id,
                 text=f"🎉 **Payment Verified!**\n\nClick link below to access channel:\n👉 {invite_link_payload.invite_link}\n\n⚠️ _Expires in 24 hours._"
             )
-            await callback.message.edit_caption(caption=f"{callback.message.caption}\n\n✅ **APPROVED BLOCK TRACK**")
+            await callback.message.edit_caption(caption=f"{callback.message.caption}\n\n🟢 **STATUS:** APPROVED TRACK LOG")
         except Exception as dynamic_failure_exception:
-            await callback.message.reply_text(f"❌ **Link Error:** `{dynamic_failure_exception}`")
+            await callback.message.reply_text(f"❌ **Link Error Exception:** `{dynamic_failure_exception}`")
 
     elif action == "reject":
         try:
@@ -220,13 +225,13 @@ async def execution_routing_control_switches(client: Client, callback: CallbackQ
                 chat_id=target_user_id,
                 text="❌ **Payment Rejected!** Please try again with valid proof parameters logs."
             )
-            await callback.message.edit_caption(caption=f"{callback.message.caption}\n\n❌ **REJECTED BLOCK TRACK**")
+            await callback.message.edit_caption(caption=f"{callback.message.caption}\n\n🔴 **STATUS:** REJECTED TRACK LOG")
         except Exception as e: 
             print(f"Failed to reply: {e}")
     await callback.answer()
 
 async def main():
-    print("🔥 Secure Production Single Bot Framework Online.")
+    print("🔥 Secure Production Single Bot Framework Online with Log Channel routing active.")
     await bot.start()
     await asyncio.Event().wait()
 
