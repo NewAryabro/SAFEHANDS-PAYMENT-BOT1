@@ -24,7 +24,7 @@ if "pyrogram.sync" not in sys.modules:
 
 from pyrogram import Client, filters
 from pyrogram.types import InlineKeyboardMarkup, InlineKeyboardButton, Message, CallbackQuery
-from pyrogram.errors import UserIsBlocked, InputUserDeactivated, PeerIdInvalid
+from pyrogram.errors import UserIsBlocked, InputUserDeactivated
 
 # ==========================================
 # ⚙️ SECURE CONFIGURATION CONFIG
@@ -39,7 +39,7 @@ LOG_CHANNEL_ID = -1001639319995
 bot = Client("simple_pay_bot", api_id=API_ID, api_hash=API_HASH, bot_token=BOT_TOKEN)
 
 # ==========================================
-# 🗄️ EXTENDED DATABANK HANDLER (USERS TRACKING ADDED)
+# 🗄️ EXTENDED DATABANK HANDLER (WITH BAN MANAGEMENT)
 # ==========================================
 class Database:
     def __init__(self):
@@ -62,13 +62,14 @@ class Database:
                 timestamp INTEGER
             )
         ''')
-        # Users Table (New feature tracking)
+        # Users Table (With Ban Flag)
         cursor.execute('''
             CREATE TABLE IF NOT EXISTS users (
                 user_id INTEGER PRIMARY KEY,
                 username TEXT,
                 first_name TEXT,
-                join_date INTEGER
+                join_date INTEGER,
+                is_banned INTEGER DEFAULT 0
             )
         ''')
         conn.commit()
@@ -81,11 +82,18 @@ class Database:
         conn.close()
         return True if res else False
 
+    def is_user_banned(self, user_id):
+        conn, cursor = self._get_conn()
+        cursor.execute("SELECT is_banned FROM users WHERE user_id = ?", (user_id,))
+        res = cursor.fetchone()
+        conn.close()
+        return True if res and res[0] == 1 else False
+
     def add_user(self, user_id, username, first_name):
         conn, cursor = self._get_conn()
         try:
             cursor.execute(
-                "INSERT OR REPLACE INTO users (user_id, username, first_name, join_date) VALUES (?, ?, ?, ?)",
+                "INSERT OR REPLACE INTO users (user_id, username, first_name, join_date, is_banned) VALUES (?, ?, ?, ?, 0)",
                 (user_id, username, first_name, int(time.time()))
             )
             conn.commit()
@@ -95,9 +103,15 @@ class Database:
         finally:
             conn.close()
 
+    def set_ban_status(self, user_id, ban_status):
+        conn, cursor = self._get_conn()
+        cursor.execute("UPDATE users SET is_banned = ? WHERE user_id = ?", (ban_status, user_id))
+        conn.commit()
+        conn.close()
+
     def fetch_all_users(self):
         conn, cursor = self._get_conn()
-        cursor.execute("SELECT user_id FROM users")
+        cursor.execute("SELECT user_id FROM users WHERE is_banned = 0")
         rows = cursor.fetchall()
         conn.close()
         return [row[0] for row in rows]
@@ -107,6 +121,35 @@ class Database:
         cursor.execute("DELETE FROM users WHERE user_id = ?", (user_id,))
         conn.commit()
         conn.close()
+
+    def get_global_stats(self):
+        conn, cursor = self._get_conn()
+        
+        cursor.execute("SELECT COUNT(*) FROM users")
+        total_users = cursor.fetchone()[0]
+        
+        cursor.execute("SELECT COUNT(*) FROM users WHERE is_banned = 1")
+        banned_users = cursor.fetchone()[0]
+        
+        cursor.execute("SELECT COUNT(*) FROM payments WHERE status = 'APPROVED'")
+        approved_payments = cursor.fetchone()[0]
+        
+        cursor.execute("SELECT COUNT(*) FROM payments WHERE status = 'PENDING'")
+        pending_payments = cursor.fetchone()[0]
+        
+        # Today's new users (UTC bounds)
+        today_start = int(datetime.now(timezone.utc).replace(hour=0, minute=0, second=0, microsecond=0).timestamp())
+        cursor.execute("SELECT COUNT(*) FROM users WHERE join_date >= ?", (today_start,))
+        today_users = cursor.fetchone()[0]
+
+        conn.close()
+        return {
+            "total_users": total_users,
+            "banned_users": banned_users,
+            "approved_payments": approved_payments,
+            "pending_payments": pending_payments,
+            "today_users": today_users
+        }
 
     def check_utr(self, utr):
         conn, cursor = self._get_conn()
@@ -153,14 +196,21 @@ user_billing_state = {}
 # 🤖 BOT INTERFACE LOGIC FLOWS
 # ==========================================
 
+# 🛑 ANTI-BAN PROXIMAL FILTER CHECK
+async def check_banned_middleware(message: Message):
+    if db.is_user_banned(message.from_user.id):
+        await message.reply_text("🚫 **Access Denied:** Your profile has been blacklisted by the Administrator.")
+        return True
+    return False
+
 @bot.on_message(filters.command(["start", "help"]) & filters.private)
 async def start_handler(client: Client, message: Message):
+    if await check_banned_middleware(message): return
     user_id = message.from_user.id
     user_billing_state.pop(user_id, None)
     
     username_ref = f"@{message.from_user.username}" if message.from_user.username else "No Username"
     
-    # 🆕 LOG NEW USER LOGIC: Logs to channel when a brand new user joins
     if not db.check_user_exists(user_id):
         db.add_user(user_id, message.from_user.username, message.from_user.first_name)
         new_user_log = (
@@ -169,92 +219,137 @@ async def start_handler(client: Client, message: Message):
             f"🆔 **ID:** `{user_id}`\n"
             f"🌐 **Handle:** {username_ref}"
         )
-        try:
-            await bot.send_message(chat_id=LOG_CHANNEL_ID, text=new_user_log)
-        except Exception as e:
-            print(f"Failed logging new user: {e}")
+        try: await bot.send_message(chat_id=LOG_CHANNEL_ID, text=new_user_log)
+        except Exception: pass
             
     keyboard = InlineKeyboardMarkup([
         [InlineKeyboardButton("💳 Pay Now", callback_data="show_qr")],
         [InlineKeyboardButton("📞 Support", url=f"tg://user?id={ADMIN_ID}")]
     ])
     await message.reply_text(
-        "👋 **Welcome Premium Channel Access**\n\nPrice: **Extra Special Rate ₹99**\n👇 Click below to pay:",
+        "👋 **Welcome Premium Channel Access**\n\nPrice: ** .Extra Special Rate ₹99**\n👇 Click below to pay:",
         reply_markup=keyboard
     )
 
-# 📢 ADMIN BROADCAST LOGIC (Sends any text message replied with /broadcast to everyone)
+# 📊 1. /status COMMAND IMPLEMENTATION (Admin Only)
+@bot.on_message(filters.command("status") & filters.user(ADMIN_ID) & filters.private)
+async def status_dashboard_handler(client: Client, message: Message):
+    stats = db.get_global_stats()
+    report = (
+        "📊 **Premium Payments Infrastructure Status**\n"
+        "━━━━━━━━━━━━━━━━━━━━\n\n"
+        f"👥 **Total Registered Users:** `{stats['total_users']}`\n"
+        f"📈 **New Users Today:** `{stats['today_users']}`\n"
+        f"🚫 **Blacklisted (Banned):** `{stats['banned_users']}`\n\n"
+        f"💰 **Successful Sales (Approved):** `{stats['approved_payments']}`\n"
+        f"⏳ **Verification Queue (Pending):** `{stats['pending_payments']}`\n\n"
+        f"🕒 **Server Time Sync:** `{datetime.now(timezone.utc).strftime('%Y-%m-%d %H:%M UTC')}`"
+    )
+    await message.reply_text(report)
+
+# 🔨 2. /ban COMMAND IMPLEMENTATION (Admin Only)
+@bot.on_message(filters.command("ban") & filters.user(ADMIN_ID) & filters.private)
+async def ban_user_handler(client: Client, message: Message):
+    if len(message.command) < 2:
+        await message.reply_text("⚠️ Syntax: `/ban <user_id>`")
+        return
+    
+    target_id_str = message.command[1]
+    if not target_id_str.isdigit():
+        await message.reply_text("❌ User ID must be numeric.")
+        return
+        
+    target_id = int(target_id_str)
+    db.set_ban_status(target_id, 1)
+    
+    await message.reply_text(f"✅ User `{target_id}` has been **Blacklisted** from the system.")
+    try:
+        await bot.send_message(chat_id=LOG_CHANNEL_ID, text=f"🔨 **Admin Ban Action:**\nUser ID `{target_id}` was banned from using the bot.")
+        await bot.send_message(chat_id=target_id, text="🚫 Your account has been banned from using this bot by the Administrator.")
+    except Exception: pass
+
+# 🔓 3. /unban COMMAND IMPLEMENTATION (Admin Only)
+@bot.on_message(filters.command("unban") & filters.user(ADMIN_ID) & filters.private)
+async def unban_user_handler(client: Client, message: Message):
+    if len(message.command) < 2:
+        await message.reply_text("⚠️ Syntax: `/unban <user_id>`")
+        return
+    
+    target_id_str = message.command[1]
+    if not target_id_str.isdigit():
+        await message.reply_text("❌ User ID must be numeric.")
+        return
+        
+    target_id = int(target_id_str)
+    db.set_ban_status(target_id, 0)
+    
+    await message.reply_text(f"✅ User `{target_id}` has been **Whitelisted/Unbanned** safely.")
+    try:
+        await bot.send_message(chat_id=LOG_CHANNEL_ID, text=f"🔓 **Admin Unban Action:**\nUser ID `{target_id}` was unbanned successfully.")
+        await bot.send_message(chat_id=target_id, text="🎉 Your account has been unbanned. You can use the bot normally now!")
+    except Exception: pass
+
+# 📢 ADMIN BROADCAST LOGIC
 @bot.on_message(filters.command("broadcast") & filters.user(ADMIN_ID) & filters.private)
 async def broadcast_handler(client: Client, message: Message):
     if not message.reply_to_message:
-        await message.reply_text("❌ Please use `/broadcast` as a **reply** to the message you want to blast to everyone.")
+        await message.reply_text("❌ Please use `/broadcast` as a **reply** to the message you want to blast.")
         return
 
     broadcast_msg = message.reply_to_message
     all_users = db.fetch_all_users()
     
     status_update_msg = await message.reply_text(f"⏳ **Starting Broadcast Blast...** Target: `{len(all_users)}` users.")
-    
-    success_count = 0
-    blocked_count = 0
-    failed_count = 0
+    success_count, blocked_count, failed_count = 0, 0, 0
 
     for idx, user_id in enumerate(all_users):
         try:
             await broadcast_msg.copy(chat_id=user_id)
             success_count += 1
         except (UserIsBlocked, InputUserDeactivated):
-            # 🚫 USER BLOCKED LOGIC: Handle blocks, log it and remove from active DB lists
             blocked_count += 1
             db.remove_user(user_id)
-            try:
-                await bot.send_message(
-                    chat_id=LOG_CHANNEL_ID,
-                    text=f"🚫 **User Cleaned Up from Database!**\nReason: Bot was blocked/deactivated.\n🆔 **User ID:** `{user_id}`"
-                )
-            except Exception:
-                pass
-        except Exception:
-            failed_count += 1
+            try: await bot.send_message(chat_id=LOG_CHANNEL_ID, text=f"🚫 **User Cleaned Up!**\n🆔 **User ID:** `{user_id}`")
+            except Exception: pass
+        except Exception: failed_count += 1
             
-        # Update progress counter dynamically every 15 entries
         if idx % 15 == 0:
-            try:
-                await status_update_msg.edit_text(f"⏳ Processing: `{idx}/{len(all_users)}` finished...")
-            except Exception:
-                pass
-        await asyncio.sleep(0.05)  # Flood avoidance rate limiter
+            try: await status_update_msg.edit_text(f"⏳ Processing: `{idx}/{len(all_users)}` finished...")
+            except Exception: pass
+        await asyncio.sleep(0.05)
 
-    # Send Complete Stats Directly To Log Channel
     final_report = (
         f"📢 **Broadcast Campaign Finished Report!**\n\n"
         f"✅ **Sent Successfully:** `{success_count}`\n"
         f"🚫 **Users Blocked (Removed):** `{blocked_count}`\n"
-        f"⚠️ **Failed/Expired Peers:** `{failed_count}`\n\n"
-        f"📊 Total Database Pipeline Targets: `{len(all_users)}`"
+        f"⚠️ **Failed:** `{failed_count}`\n\n"
+        f"📊 Total Database Targets: `{len(all_users)}`"
     )
     await status_update_msg.edit_text("✅ Broadcast operational run complete. Statistics sent to logs channel.")
     await bot.send_message(chat_id=LOG_CHANNEL_ID, text=final_report)
 
 @bot.on_callback_query(filters.regex("^show_qr$"))
 async def show_qr_handler(client: Client, callback: CallbackQuery):
+    if db.is_user_banned(callback.from_user.id): return
     keyboard = InlineKeyboardMarkup([[InlineKeyboardButton("✅ I Have Paid", callback_data="confirm_paid")]])
     await callback.message.reply_text(
-        "🤖 **Payment Details Gateway Ledger**:\n\n▫️ **UPI ID:** `safehands@ibl`\n▫️ **Amount:** `₹99`\n\n📌 _Send payment screenshots and UTR sequences down below._",
+        "🤖 **Payment Details Gateway Ledger**:\n\n▫️ **UPI ID:** `safehands@ibl`\n▫️ **Amount:** `₹99`",
         reply_markup=keyboard
     )
     await callback.answer()
 
 @bot.on_callback_query(filters.regex("^confirm_paid$"))
 async def instruct_user_inputs(client: Client, callback: CallbackQuery):
+    if db.is_user_banned(callback.from_user.id): return
     user_billing_state[callback.from_user.id] = {"status": "AWAITING_DATA", "utr": None, "photo": None}
     await callback.message.reply_text(
         "📝 **Verification Requirements:**\n\n1️⃣ Send your **UTR / Reference Number** in text.\n2️⃣ Send the **Screenshot image** right after."
     )
     await callback.answer()
 
-@bot.on_message((filters.text | filters.photo) & filters.private & ~filters.command(["start", "help", "broadcast"]))
+@bot.on_message((filters.text | filters.photo) & filters.private & ~filters.command(["start", "help", "broadcast", "status", "ban", "unban"]))
 async def forward_to_admin_manual_check(client: Client, message: Message):
+    if await check_banned_middleware(message): return
     user_id = message.from_user.id
     if user_id == ADMIN_ID: return 
 
@@ -275,10 +370,8 @@ async def forward_to_admin_manual_check(client: Client, message: Message):
             state["utr"] = detected_utr
 
     if message.photo:
-        if isinstance(message.photo, list):
-            state["photo"] = message.photo[-1].file_id
-        elif hasattr(message.photo, "file_id"):
-            state["photo"] = message.photo.file_id
+        if isinstance(message.photo, list): state["photo"] = message.photo[-1].file_id
+        elif hasattr(message.photo, "file_id"): state["photo"] = message.photo.file_id
 
     if not state["utr"] or not state["photo"]:
         state["status"] = "COLLECTING"
@@ -362,9 +455,10 @@ async def execution_routing_control_switches(client: Client, callback: CallbackQ
     await callback.answer()
 
 async def main():
-    print("🔥 Secure Production Single Bot Framework Online with Extended Monitoring Engine.")
+    print("🔥 Secure Production Single Bot Framework Online with Full Admin Suite Active.")
     await bot.start()
     await asyncio.Event().wait()
 
 if __name__ == "__main__":
     loop.run_until_complete(main())
+    
