@@ -31,7 +31,7 @@ API_ID = 34042874
 API_HASH = "494b9f740bc2f8f0e1a17c1c9f27ed9c"          
 BOT_TOKEN = "8492099684:AAH2lszBjqcZj5bmr_ouvzWKNi32FOUnuWc"        
 ADMIN_ID = 2066626554               
-TARGET_CHANNEL_ID = -1003880366972  
+TARGET_CHANNEL_ID = -1002255752986  
 
 bot = Client("simple_pay_bot", api_id=API_ID, api_hash=API_HASH, bot_token=BOT_TOKEN)
 
@@ -95,7 +95,7 @@ async def start_handler(client: Client, message: Message):
 async def show_qr_handler(client: Client, callback: CallbackQuery):
     keyboard = InlineKeyboardMarkup([[InlineKeyboardButton("✅ I Have Paid", callback_data="confirm_paid")]])
     await callback.message.reply_text(
-        "🤖 **Payment Details Gateway Ledger**:\n\n▫️ **UPI ID:** `safehands@ibl`\n▫️ **Amount:** `₹99`",
+        "🤖 **Payment Details Gateway Ledger**:\n\n▫️ **UPI ID:** `telugumovies8985-1@oksbi`\n▫️ **Amount:** `₹99`",
         reply_markup=keyboard
     )
     await callback.answer()
