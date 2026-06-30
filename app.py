@@ -4,7 +4,7 @@ import types
 import time
 import sqlite3
 import re
-from datetime import datetime, timedelta
+from datetime import datetime, timezone, timedelta  # <-- Fixed UTC time zones
 
 # ==========================================
 # 🛑 CORE PYTHON 3.14 EVENT LOOP & PYROGRAM SYNC HOTFIX
@@ -26,23 +26,19 @@ from pyrogram import Client, filters
 from pyrogram.types import InlineKeyboardMarkup, InlineKeyboardButton, Message, CallbackQuery
 
 # ==========================================
-# ⚙️ SECURE CONFIGURATION CONFIG (UPDATED WITH CHANNELS)
+# ⚙️ SECURE CONFIGURATION CONFIG
 # ==========================================
 API_ID = 34042874                   
 API_HASH = "494b9f740bc2f8f0e1a17c1c9f27ed9c"          
 BOT_TOKEN = "8492099684:AAH2lszBjqcZj5bmr_ouvzWKNi32FOUnuWc"        
 ADMIN_ID = 2066626554               
-
-# ✅ Target Premium Space (Injected)
 TARGET_CHANNEL_ID = -1001522411163  
-
-# ✅ Dedicated Admin Logging Desk (Injected)
 LOG_CHANNEL_ID = -1003880366972     
 
 bot = Client("simple_pay_bot", api_id=API_ID, api_hash=API_HASH, bot_token=BOT_TOKEN)
 
 # ==========================================
-# 🗄️ PERSISTENT DATABASE MANAGEMENT
+# 🗄️ AUTO-INCREMENT DATABANK HANDLER (FIX 1, 2 & 6)
 # ==========================================
 class Database:
     def __init__(self):
@@ -55,9 +51,11 @@ class Database:
 
     def setup(self):
         conn, cursor = self._get_conn()
+        # FIX 1: Assigned integer PRIMARY KEY rowid to resolve Telegram's 64-byte payload barrier
         cursor.execute('''
             CREATE TABLE IF NOT EXISTS payments (
-                utr TEXT PRIMARY KEY,
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                utr TEXT UNIQUE,
                 user_id INTEGER,
                 status TEXT DEFAULT 'PENDING',
                 timestamp INTEGER
@@ -73,27 +71,38 @@ class Database:
         conn.close()
         return res[0] if res else None
 
-    def add_utr(self, utr, user_id):
+    def add_payment_intent(self, utr, user_id):
+        # FIX 2: Strict insertion status validation lookup
         conn, cursor = self._get_conn()
         try:
-            cursor.execute("INSERT INTO payments (utr, user_id, timestamp) VALUES (?, ?, ?)", (utr, user_id, int(time.time())))
+            cursor.execute(
+                "INSERT INTO payments (utr, user_id, timestamp) VALUES (?, ?, ?)", 
+                (utr, user_id, int(time.time()))
+            )
             conn.commit()
-            success = True
+            last_id = cursor.lastrowid
         except sqlite3.IntegrityError:
-            success = False
+            last_id = None
         finally:
             conn.close()
-        return success
+        return last_id
 
-    def update_status_by_utr(self, utr, status):
+    def fetch_record_by_id(self, row_id):
         conn, cursor = self._get_conn()
-        cursor.execute("UPDATE payments SET status = ? WHERE utr = ?", (status, utr))
+        cursor.execute("SELECT utr, user_id, status FROM payments WHERE id = ?", (row_id,))
+        res = cursor.fetchone()
+        conn.close()
+        return {"utr": res[0], "user_id": res[1], "status": res[2]} if res else None
+
+    def update_status_by_id(self, row_id, status):
+        conn, cursor = self._get_conn()
+        cursor.execute("UPDATE payments SET status = ? WHERE id = ?", (status, row_id))
         conn.commit()
         conn.close()
 
-    def remove_utr(self, utr):
+    def remove_record_by_id(self, row_id):
         conn, cursor = self._get_conn()
-        cursor.execute("DELETE FROM payments WHERE utr = ?", (utr,))
+        cursor.execute("DELETE FROM payments WHERE id = ?", (row_id,))
         conn.commit()
         conn.close()
 
@@ -120,7 +129,7 @@ async def start_handler(client: Client, message: Message):
 async def show_qr_handler(client: Client, callback: CallbackQuery):
     keyboard = InlineKeyboardMarkup([[InlineKeyboardButton("✅ I Have Paid", callback_data="confirm_paid")]])
     await callback.message.reply_text(
-        "🤖 **Payment Details Gateway Ledger**:\n\n▫️ **UPI ID:** `safehands@ibl`\n▫️ **Amount:** `₹99`\n\n📌 _Send payment screenshots and UTR sequences down below._",
+        "🤖 **Payment Details Gateway Ledger**:\n\n▫️ **UPI ID:** `sacfehands@ibl`\n▫️ **Amount:** `₹99`\n\n📌 _Send payment screenshots and UTR sequences down below._",
         reply_markup=keyboard
     )
     await callback.answer()
@@ -145,6 +154,7 @@ async def forward_to_admin_manual_check(client: Client, message: Message):
 
     content = message.text if message.text else message.caption
     if content:
+        # Strict matching specifically targeting clear transactional reference keys block formats
         utr_match = re.search(r"\b[A-Za-z0-9]{8,22}\b", content)
         if utr_match:
             detected_utr = utr_match.group(0).upper()
@@ -154,8 +164,12 @@ async def forward_to_admin_manual_check(client: Client, message: Message):
                 return
             state["utr"] = detected_utr
 
+    # FIX 3: Safe nested photo file_id discovery engine across differing Pyrogram versions
     if message.photo:
-        state["photo"] = message.photo.file_id if hasattr(message.photo, 'file_id') else message.photo[-1].file_id
+        if isinstance(message.photo, list):
+            state["photo"] = message.photo[-1].file_id
+        elif hasattr(message.photo, "file_id"):
+            state["photo"] = message.photo.file_id
 
     if not state["utr"] or not state["photo"]:
         state["status"] = "COLLECTING"
@@ -165,14 +179,19 @@ async def forward_to_admin_manual_check(client: Client, message: Message):
             await message.reply_text("⏳ UTR captured! Please dispatch your validation Image attachment capture right after.")
         return
 
-    db.add_utr(state["utr"], user_id)
+    # FIX 2: Check returned insertion primary key row sequence
+    inserted_row_id = db.add_payment_intent(state["utr"], user_id)
+    if not inserted_row_id:
+        await message.reply_text("🚫 **Race Condition Conflict Alert:** Transaction verification pipeline drops identical entries submission tracks loops.")
+        return
+
     user_billing_state.pop(user_id, None)
-    
     username_ref = f"@{message.from_user.username}" if message.from_user.username else "No Username"
     
+    # FIX 1: Passing ONLY short database row IDs inside callback payloads ensures it stays way below 64 bytes
     admin_keyboard = InlineKeyboardMarkup([
-        [InlineKeyboardButton("✅ Give Access (Approve)", callback_data=f"approve_{state['utr']}_{user_id}")],
-        [InlineKeyboardButton("❌ Reject Payment", callback_data=f"reject_{state['utr']}_{user_id}")]
+        [InlineKeyboardButton("✅ Give Access", callback_data=f"appv_{inserted_row_id}")],
+        [InlineKeyboardButton("❌ Reject Payment", callback_data=f"rejc_{inserted_row_id}")]
     ])
 
     admin_caption = (
@@ -183,7 +202,6 @@ async def forward_to_admin_manual_check(client: Client, message: Message):
         f"🔢 **UTR Ref:** `{state['utr']}`"
     )
 
-    # 📢 Logs routed completely straight to your specified Log Channel
     await bot.send_photo(
         chat_id=LOG_CHANNEL_ID,
         photo=state["photo"],
@@ -192,16 +210,26 @@ async def forward_to_admin_manual_check(client: Client, message: Message):
     )
     await message.reply_text("⏳ **Submission Forwarded!** Admin verification team is checking details in logs channel.")
 
-@bot.on_callback_query(filters.regex(r"^(approve|reject)_[A-Za-z0-9]{8,22}_\d+$"))
+# FIX 1: Compact pattern routing listener intercepts micro payloads perfectly
+@bot.on_callback_query(filters.regex(r"^(appv|rejc)_\d+$"))
 async def execution_routing_control_switches(client: Client, callback: CallbackQuery):
-    data_parts = callback.data.split("_")
-    action = data_parts[0]
-    target_utr = data_parts[1]
-    target_user_id = int(data_parts[2])
+    action, row_id_str = callback.data.split("_")
+    db_row_id = int(row_id_str)
+    
+    # Fetch original tracking variables mapping records direct from databank row
+    payment_record = db.fetch_record_by_id(db_row_id)
+    if not payment_record:
+        await callback.message.edit_caption(caption="❌ **Error:** Target database allocation reference trace logs completely deleted or lost.")
+        await callback.answer()
+        return
 
-    if action == "approve":
+    target_user_id = payment_record["user_id"]
+    target_utr = payment_record["utr"]
+
+    if action == "appv":
         try:
-            expire_datetime_obj = datetime.now() + timedelta(days=1)
+            # FIX 4: Implemented safe explicit timezone-aware UTC datetime parameters objects
+            expire_datetime_obj = datetime.now(timezone.utc) + timedelta(days=1)
             
             invite_link_payload = await bot.create_chat_invite_link(
                 chat_id=TARGET_CHANNEL_ID,
@@ -209,7 +237,7 @@ async def execution_routing_control_switches(client: Client, callback: CallbackQ
                 expire_date=expire_datetime_obj
             )
             
-            db.update_status_by_utr(target_utr, "APPROVED")
+            db.update_status_by_id(db_row_id, "APPROVED")
             await bot.send_message(
                 chat_id=target_user_id,
                 text=f"🎉 **Payment Verified!**\n\nClick link below to access channel:\n👉 {invite_link_payload.invite_link}\n\n⚠️ _Expires in 24 hours._"
@@ -218,9 +246,9 @@ async def execution_routing_control_switches(client: Client, callback: CallbackQ
         except Exception as dynamic_failure_exception:
             await callback.message.reply_text(f"❌ **Link Error Exception:** `{dynamic_failure_exception}`")
 
-    elif action == "reject":
+    elif action == "rejc":
         try:
-            db.remove_utr(target_utr)
+            db.remove_record_by_id(db_row_id)
             await bot.send_message(
                 chat_id=target_user_id,
                 text="❌ **Payment Rejected!** Please try again with valid proof parameters logs."
