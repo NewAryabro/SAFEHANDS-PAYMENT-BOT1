@@ -27,19 +27,21 @@ from pyrogram.types import InlineKeyboardMarkup, InlineKeyboardButton, Message, 
 from pyrogram.errors import UserIsBlocked, InputUserDeactivated
 
 # ==========================================
-# ⚙️ SECURE CONFIGURATION CONFIG
+# ⚙️ SECURE CONFIGURATION CONFIG (UPDATED CHANNELS)
 # ==========================================
 API_ID = 34042874                   
 API_HASH = "494b9f740bc2f8f0e1a17c1c9f27ed9c"          
 BOT_TOKEN = "8492099684:AAH2lszBjqcZj5bmr_ouvzWKNi32FOUnuWc"        
 ADMIN_ID = 2066626554               
+
+# ✅ Fully Updated Space IDs
 TARGET_CHANNEL_ID = -1001522411163  
-LOG_CHANNEL_ID = -1003880366972     
+LOG_CHANNEL_ID = -1001639319995     
 
 bot = Client("simple_pay_bot", api_id=API_ID, api_hash=API_HASH, bot_token=BOT_TOKEN)
 
 # ==========================================
-# 🗄️ EXTENDED DATABANK HANDLER (WITH REPLY CORRELATION)
+# 🗄️ EXTENDED DATABANK HANDLER
 # ==========================================
 class Database:
     def __init__(self):
@@ -52,7 +54,7 @@ class Database:
 
     def setup(self):
         conn, cursor = self._get_conn()
-        # Payments Table (Added log_msg_id to correlate replies)
+        # Payments Table (Row Auto-ID & Telegram Log Message ID configured distinctly)
         cursor.execute('''
             CREATE TABLE IF NOT EXISTS payments (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -177,7 +179,6 @@ class Database:
         return {"utr": res[0], "user_id": res[1], "status": res[2]} if res else None
 
     def fetch_user_by_log_msg(self, log_msg_id):
-        # Fetching destination user context based on log channel message references
         conn, cursor = self._get_conn()
         cursor.execute("SELECT user_id FROM payments WHERE log_msg_id = ?", (log_msg_id,))
         res = cursor.fetchone()
@@ -310,23 +311,18 @@ async def broadcast_handler(client: Client, message: Message):
     await status_update_msg.edit_text("✅ Broadcast complete. Stats sent to log channel.")
     await bot.send_message(chat_id=LOG_CHANNEL_ID, text=f"📢 **Broadcast Campaign Finished!**\n\n✅ Success: `{success_count}`\n🚫 Blocked: `{blocked_count}`\n⚠️ Failed: `{failed_count}`")
 
-# 📥 LIVEGRAM REPLY ENGINE: Captures replies inside Log Channel and routes them back to the user
+# 📥 LIVEGRAM REPLY ENGINE
 @bot.on_message(filters.chat(LOG_CHANNEL_ID) & filters.reply)
 async def livegram_reply_routing_handler(client: Client, message: Message):
-    # Short-circuit internal service bot notifications
     if message.text and message.text.startswith("/"): return
-    
-    # Identify target destination user from message reference mappings
     target_user_id = db.fetch_user_by_log_msg(message.reply_to_message_id)
-    if not target_user_id:
-        return # Not a user verification block request message, ignore gracefully
+    if not target_user_id: return
 
     try:
-        # Route identical message payload directly to the user chat room
         await message.copy(chat_id=target_user_id)
         await message.reply_text(f"🚀 **Livegram Reply Dispatched Successfully to User:** `{target_user_id}`")
     except (UserIsBlocked, InputUserDeactivated):
-        await message.reply_text(f"❌ **Delivery Failed:** Bot was blocked by the destination user (`{target_user_id}`).")
+        await message.reply_text(f"❌ **Delivery Failed:** Bot was blocked by user (`{target_user_id}`).")
     except Exception as e:
         await message.reply_text(f"❌ **Delivery Exception:** `{e}`")
 
@@ -404,7 +400,6 @@ async def forward_to_admin_manual_check(client: Client, message: Message):
         f"🔢 **UTR Ref:** `{state['utr']}`"
     )
 
-    # Sending payload over to Log Channel and saving its message ID for future livegram routing
     log_message_node = await bot.send_photo(
         chat_id=LOG_CHANNEL_ID,
         photo=state["photo"],
