@@ -3,9 +3,8 @@ import sys
 import types
 
 # ==========================================
-# 🛑 PYROGRAM PYTHON 3.14 INTUITIVE MODULE HOTFIX
+# 🛑 CORE HOTFIX FOR PYTHON 3.14 LOOP ISSUES
 # ==========================================
-# Instead of None, inject a mock fake module to bypass recursive load errors completely
 if "pyrogram.sync" not in sys.modules:
     mock_sync_module = types.ModuleType("pyrogram.sync")
     mock_sync_module.async_to_sync = lambda source, name=None: source
@@ -18,7 +17,7 @@ from pyrogram import Client, filters
 from pyrogram.types import InlineKeyboardMarkup, InlineKeyboardButton, Message, CallbackQuery
 
 # ==========================================
-# ⚙️ CONFIGURATION SETTINGS PIPELINE (INJECTED)
+# ⚙️ CONFIGURATION SETTINGS PIPELINE
 # ==========================================
 API_ID = 34042874                   
 API_HASH = "494b9f740bc2f8f0e1a17c1c9f27ed9c"          
@@ -28,7 +27,8 @@ TARGET_CHANNEL_ID = -1003880366972
 
 bot = Client("simple_pay_bot", api_id=API_ID, api_hash=API_HASH, bot_token=BOT_TOKEN)
 
-pending_requests = {}
+# Active session user steps storage dictionary to avoid messy text collisions
+user_billing_state = {}
 
 # ==========================================
 # 🤖 BOT INTERFACE LOGIC FLOWS
@@ -36,6 +36,9 @@ pending_requests = {}
 
 @bot.on_message(filters.command("start") & filters.private)
 async def start_handler(client: Client, message: Message):
+    # Clear tracking session history array patterns upon restart initialization execution loops
+    user_billing_state.pop(message.from_user.id, None)
+    
     keyboard = InlineKeyboardMarkup([
         [InlineKeyboardButton("💳 Pay Now", callback_data="show_qr")],
         [InlineKeyboardButton("📞 Support", url=f"tg://user?id={ADMIN_ID}")]
@@ -56,13 +59,16 @@ async def show_qr_handler(client: Client, callback: CallbackQuery):
         "🤖 **Payment Details Gateway Ledger**:\n\n"
         "▫️ **UPI ID:** `safehands@ibl`\n"
         "▫️ **Amount:** `₹99`\n\n"
-        "📌 _Please pay using the transaction details code target mentioned above. Once payment processing updates complete successfully, click verification indicators down below._",
+        "📌 _Please pay using the transaction details code target mentioned above._",
         reply_markup=keyboard
     )
     await callback.answer()
 
 @bot.on_callback_query(filters.regex("^confirm_paid$"))
 async def instruct_user_inputs(client: Client, callback: CallbackQuery):
+    # Lock target user interface node steps tracker arrays index keys maps
+    user_billing_state[callback.from_user.id] = "AWAITING_PROOF"
+    
     await callback.message.reply_text(
         "📝 **Verification Blueprint Inputs Details Requirements:**\n\n"
         "Please type and reply to this message directly providing details using this simple format:\n\n"
@@ -71,39 +77,47 @@ async def instruct_user_inputs(client: Client, callback: CallbackQuery):
     )
     await callback.answer()
 
+# FIX: Filter overlap issue resolved by matching state keys flags dynamically
 @bot.on_message((filters.text | filters.photo) & filters.private & ~filters.command)
 async def forward_to_admin_manual_check(client: Client, message: Message):
-    if message.from_user.id == ADMIN_ID:
-        return 
+    user_id = message.from_user.id
+    
+    # If the admin wants to test their own bot, let them pass the checks smoothly
+    if user_id == ADMIN_ID:
+        pass 
 
-    user_ref = message.from_user.id
+    # SECURITY LOCKOUT: Ignore messy spam entries unless they actually click payment confirm triggers
+    if user_billing_state.get(user_id) != "AWAITING_PROOF":
+        await message.reply_text("❌ Please click the **💳 Pay Now** button pipeline inputs sequence options first.")
+        return
+
     username_ref = f"@{message.from_user.username}" if message.from_user.username else "No Username"
     
-    pending_requests[user_ref] = {
-        "user_id": user_ref,
-        "username": username_ref
-    }
-
     admin_keyboard = InlineKeyboardMarkup([
-        [InlineKeyboardButton("✅ Give Access (Approve)", callback_data=f"approve_{user_ref}")],
-        [InlineKeyboardButton("❌ Reject Payment", callback_data=f"reject_{user_ref}")]
+        [InlineKeyboardButton("✅ Give Access (Approve)", callback_data=f"approve_{user_id}")],
+        [InlineKeyboardButton("❌ Reject Payment", callback_data=f"reject_{user_id}")]
     ])
 
     await bot.send_message(
         chat_id=ADMIN_ID,
         text=f"💰 **New Manual Verification Request Pending!**\n\n"
              f"👤 **User Name:** {message.from_user.first_name}\n"
-             f"🆔 **User Index ID:** `{user_ref}`\n"
+             f"🆔 **User Index ID:** `{user_id}`\n"
              f"🌐 **Handle Profile:** {username_ref}\n\n"
-             f"👇 Review data submission payloads images logs trace parameters matching criteria. Trigger operational status down below:",
+             f"👇 Review data submission payloads images logs trace parameters matching criteria:",
         reply_markup=admin_keyboard
     )
+    
     await message.forward(chat_id=ADMIN_ID)
-    await message.reply_text("⏳ **Submission Forwarded Successfully!** Admin pipeline verification checks entries records data. Please hold tracking state.")
+    
+    # Session state update release to lock entries properly
+    user_billing_state.pop(user_id, None)
+    await message.reply_text("⏳ **Submission Forwarded Successfully!** Admin verification checks entries records data.")
 
+# FIX: Added limit parameter limit splits constraint checks to prevent indexing breaks parsing regex 
 @bot.on_callback_query(filters.regex(r"^(approve|reject)_\d+$"))
 async def execution_routing_control_switches(client: Client, callback: CallbackQuery):
-    action, target_user_str = callback.data.split("_")
+    action, target_user_str = callback.data.split("_", 1)
     target_user_id = int(target_user_str)
 
     if action == "approve":
@@ -118,18 +132,21 @@ async def execution_routing_control_switches(client: Client, callback: CallbackQ
                 text=f"🎉 **Payment Verified Successfully!**\n\n"
                      f"Welcome ❤️ Click the link below to access premium spaces:\n\n"
                      f"👉 {invite_link_payload.invite_link}\n\n"
-                     f"⚠️ _Note: This URL works for 1 single person join execution loop parameter check._"
+                     f"⚠️ _Note: This URL works for 1 single person join allocation validation metric checks._"
             )
             await callback.message.edit_text(f"✅ Verified User Context `{target_user_id}` Access Clearance. Link issued.")
         except Exception as dynamic_failure_exception:
-            await callback.message.edit_text(f"❌ **Link Execution Exception Error:** {dynamic_failure_exception}")
+            await callback.message.edit_text(f"❌ **Link Creation Error Exception Logs:** `{dynamic_failure_exception}`\n\nEnsure bot has Admin privileges inside your Target Channel space.")
 
     elif action == "reject":
-        await bot.send_message(
-            chat_id=target_user_id,
-            text="❌ **Payment Rejected!**\n\nReason profile mapping fails verification matching bounds standards check parameters. Please support connection options to check tracking layout variables."
-        )
-        await callback.message.edit_text(f"❌ Rejected Transaction Registration Logs for User: `{target_user_id}`")
+        try:
+            await bot.send_message(
+                chat_id=target_user_id,
+                text="❌ **Payment Rejected!**\n\nReason profile mapping fails verification matching bounds standards check parameters."
+            )
+            await callback.message.edit_text(f"❌ Rejected Transaction Registration Logs for User: `{target_user_id}`")
+        except Exception as e:
+            print(f"Failed to reply to user: {e}")
         
     await callback.answer()
 
@@ -139,7 +156,6 @@ async def execution_routing_control_switches(client: Client, callback: CallbackQ
 async def main():
     print("🔥 Single Bot Manual Approvals Infrastructure Booting Context System States...")
     await bot.start()
-    # Keep application loop open asynchronously without thread crash properties
     while True:
         await asyncio.sleep(3600)
 
