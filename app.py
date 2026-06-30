@@ -3,8 +3,16 @@ import sys
 import types
 
 # ==========================================
-# 🛑 CORE HOTFIX FOR PYTHON 3.14 LOOP ISSUES
+# 🛑 FORCE INITIALIZE GLOBAL EVENT LOOP FOR PYTHON 3.14
 # ==========================================
+# Build global asynchronous orchestration maps before ANY module resolution paths trace triggers
+try:
+    loop = asyncio.get_event_loop()
+except RuntimeError:
+    loop = asyncio.new_event_loop()
+    asyncio.set_event_loop(loop)
+
+# Inject mock fake module to bypass recursive load execution loops completely
 if "pyrogram.sync" not in sys.modules:
     mock_sync_module = types.ModuleType("pyrogram.sync")
     mock_sync_module.async_to_sync = lambda source, name=None: source
@@ -17,7 +25,7 @@ from pyrogram import Client, filters
 from pyrogram.types import InlineKeyboardMarkup, InlineKeyboardButton, Message, CallbackQuery
 
 # ==========================================
-# ⚙️ CONFIGURATION SETTINGS PIPELINE
+# ⚙️ CONFIGURATION SETTINGS PIPELINE (INJECTED)
 # ==========================================
 API_ID = 34042874                   
 API_HASH = "494b9f740bc2f8f0e1a17c1c9f27ed9c"          
@@ -25,9 +33,9 @@ BOT_TOKEN = "8492099684:AAH2lszBjqcZj5bmr_ouvzWKNi32FOUnuWc"
 ADMIN_ID = 2066626554               
 TARGET_CHANNEL_ID = -1003880366972  
 
+# Loop allocation parameters mapped right inside instantiation core bounds properties
 bot = Client("simple_pay_bot", api_id=API_ID, api_hash=API_HASH, bot_token=BOT_TOKEN)
 
-# Active session user steps storage dictionary to avoid messy text collisions
 user_billing_state = {}
 
 # ==========================================
@@ -36,7 +44,6 @@ user_billing_state = {}
 
 @bot.on_message(filters.command("start") & filters.private)
 async def start_handler(client: Client, message: Message):
-    # Clear tracking session history array patterns upon restart initialization execution loops
     user_billing_state.pop(message.from_user.id, None)
     
     keyboard = InlineKeyboardMarkup([
@@ -66,9 +73,7 @@ async def show_qr_handler(client: Client, callback: CallbackQuery):
 
 @bot.on_callback_query(filters.regex("^confirm_paid$"))
 async def instruct_user_inputs(client: Client, callback: CallbackQuery):
-    # Lock target user interface node steps tracker arrays index keys maps
     user_billing_state[callback.from_user.id] = "AWAITING_PROOF"
-    
     await callback.message.reply_text(
         "📝 **Verification Blueprint Inputs Details Requirements:**\n\n"
         "Please type and reply to this message directly providing details using this simple format:\n\n"
@@ -77,16 +82,13 @@ async def instruct_user_inputs(client: Client, callback: CallbackQuery):
     )
     await callback.answer()
 
-# FIX: Filter overlap issue resolved by matching state keys flags dynamically
 @bot.on_message((filters.text | filters.photo) & filters.private & ~filters.command)
 async def forward_to_admin_manual_check(client: Client, message: Message):
     user_id = message.from_user.id
     
-    # If the admin wants to test their own bot, let them pass the checks smoothly
     if user_id == ADMIN_ID:
         pass 
 
-    # SECURITY LOCKOUT: Ignore messy spam entries unless they actually click payment confirm triggers
     if user_billing_state.get(user_id) != "AWAITING_PROOF":
         await message.reply_text("❌ Please click the **💳 Pay Now** button pipeline inputs sequence options first.")
         return
@@ -107,14 +109,10 @@ async def forward_to_admin_manual_check(client: Client, message: Message):
              f"👇 Review data submission payloads images logs trace parameters matching criteria:",
         reply_markup=admin_keyboard
     )
-    
     await message.forward(chat_id=ADMIN_ID)
-    
-    # Session state update release to lock entries properly
     user_billing_state.pop(user_id, None)
     await message.reply_text("⏳ **Submission Forwarded Successfully!** Admin verification checks entries records data.")
 
-# FIX: Added limit parameter limit splits constraint checks to prevent indexing breaks parsing regex 
 @bot.on_callback_query(filters.regex(r"^(approve|reject)_\d+$"))
 async def execution_routing_control_switches(client: Client, callback: CallbackQuery):
     action, target_user_str = callback.data.split("_", 1)
@@ -126,7 +124,6 @@ async def execution_routing_control_switches(client: Client, callback: CallbackQ
                 chat_id=TARGET_CHANNEL_ID,
                 member_limit=1
             )
-            
             await bot.send_message(
                 chat_id=target_user_id,
                 text=f"🎉 **Payment Verified Successfully!**\n\n"
@@ -160,10 +157,4 @@ async def main():
         await asyncio.sleep(3600)
 
 if __name__ == "__main__":
-    try:
-        loop = asyncio.get_event_loop()
-    except RuntimeError:
-        loop = asyncio.new_event_loop()
-        asyncio.set_event_loop(loop)
-        
     loop.run_until_complete(main())
