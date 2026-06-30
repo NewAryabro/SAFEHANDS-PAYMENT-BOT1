@@ -71,7 +71,8 @@ async def instruct_user_inputs(client: Client, callback: CallbackQuery):
     )
     await callback.answer()
 
-@bot.on_message((filters.text | filters.photo) & filters.private)
+# FIX: Added ~filters.command to prevent /start or other commands from being forwarded
+@bot.on_message((filters.text | filters.photo) & filters.private & ~filters.command)
 async def forward_to_admin_manual_check(client: Client, message: Message):
     if message.from_user.id == ADMIN_ID:
         return 
