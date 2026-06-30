@@ -3,7 +3,7 @@ import sys
 import types
 import time
 import sqlite3
-import re  # <--- Idigo ఇక్కడే ఉంది, మన అనలైజర్ చూడలేదు! 😂
+import re
 
 # ==========================================
 # 🛑 CORE PYTHON 3.14 EVENT LOOP & PYROGRAM SYNC HOTFIX
@@ -31,46 +31,67 @@ API_ID = 34042874
 API_HASH = "494b9f740bc2f8f0e1a17c1c9f27ed9c"          
 BOT_TOKEN = "8492099684:AAH2lszBjqcZj5bmr_ouvzWKNi32FOUnuWc"        
 ADMIN_ID = 2066626554               
-TARGET_CHANNEL_ID = -1002255752986  
+TARGET_CHANNEL_ID = -1003880366972  
 
 bot = Client("simple_pay_bot", api_id=API_ID, api_hash=API_HASH, bot_token=BOT_TOKEN)
 
 # ==========================================
-# 🗄️ PERSISTENT DATABASE MANAGEMENT
+# 🗄️ PERSISTENT DATABASE MANAGEMENT (THREAD-SAFE FIXED)
 # ==========================================
 class Database:
     def __init__(self):
-        self.conn = sqlite3.connect("bot_data.db", check_same_thread=False)
-        self.cursor = self.conn.cursor()
+        self.db_path = "bot_data.db"
         self.setup()
 
+    def _get_conn(self):
+        # FIX 4: Explicit isolation pipeline instances logic avoids locked database exception trace
+        conn = sqlite3.connect(self.db_path, timeout=30.0)
+        return conn, conn.cursor()
+
     def setup(self):
-        self.cursor.execute('''
+        conn, cursor = self._get_conn()
+        cursor.execute('''
             CREATE TABLE IF NOT EXISTS payments (
                 utr TEXT PRIMARY KEY,
                 user_id INTEGER,
-                status TEXT DEFAULT 'PENDING'
+                status TEXT DEFAULT 'PENDING',
+                timestamp INTEGER
             )
-        '''); self.conn.commit()
+        ''')
+        conn.commit()
+        conn.close()
 
     def check_utr(self, utr):
-        self.cursor.execute("SELECT status FROM payments WHERE utr = ?", (utr,))
-        res = self.cursor.fetchone()
+        conn, cursor = self._get_conn()
+        cursor.execute("SELECT status FROM payments WHERE utr = ?", (utr,))
+        res = cursor.fetchone()
+        conn.close()
         return res[0] if res else None
 
     def add_utr(self, utr, user_id):
+        conn, cursor = self._get_conn()
         try:
-            self.cursor.execute("INSERT INTO payments (utr, user_id) VALUES (?, ?)", (utr, user_id))
-            self.conn.commit(); return True
-        except sqlite3.IntegrityError: return False
+            cursor.execute("INSERT INTO payments (utr, user_id, timestamp) VALUES (?, ?, ?)", (utr, user_id, int(time.time())))
+            conn.commit()
+            success = True
+        except sqlite3.IntegrityError:
+            success = False
+        finally:
+            conn.close()
+        return success
 
-    def update_status(self, user_id, status):
-        self.cursor.execute("UPDATE payments SET status = ? WHERE user_id = ? AND status = 'PENDING'", (status, user_id))
-        self.conn.commit()
+    def update_status_by_utr(self, utr, status):
+        # FIX 3: Safe target data lookups targeting specific UTR code definitions explicitly
+        conn, cursor = self._get_conn()
+        cursor.execute("UPDATE payments SET status = ? WHERE utr = ?", (status, utr))
+        conn.commit()
+        conn.close()
 
-    def remove_failed_utr(self, user_id):
-        self.cursor.execute("DELETE FROM payments WHERE user_id = ? AND status = 'PENDING'", (user_id,))
-        self.conn.commit()
+    def remove_utr(self, utr):
+        conn, cursor = self._get_conn()
+        cursor.execute("DELETE FROM payments WHERE utr = ?", (utr,))
+        conn.commit()
+        conn.close()
 
 db = Database()
 user_billing_state = {}
@@ -95,7 +116,7 @@ async def start_handler(client: Client, message: Message):
 async def show_qr_handler(client: Client, callback: CallbackQuery):
     keyboard = InlineKeyboardMarkup([[InlineKeyboardButton("✅ I Have Paid", callback_data="confirm_paid")]])
     await callback.message.reply_text(
-        "🤖 **Payment Details Gateway Ledger**:\n\n▫️ **UPI ID:** `telugumovies8985-1@oksbi`\n▫️ **Amount:** `₹99`",
+        "🤖 **Payment Details Gateway Ledger**:\n\n▫️ **UPI ID:** `safehands@ibl`\n▫️ **Amount:** `₹99`\n\n📌 _Send payment details layout metrics code blocks parameters down below._",
         reply_markup=keyboard
     )
     await callback.answer()
@@ -104,7 +125,7 @@ async def show_qr_handler(client: Client, callback: CallbackQuery):
 async def instruct_user_inputs(client: Client, callback: CallbackQuery):
     user_billing_state[callback.from_user.id] = {"status": "AWAITING_DATA", "utr": None, "photo": None}
     await callback.message.reply_text(
-        "📝 **Verification Requirements:**\n\n1️⃣ Send your **UTR Number** (12 Digits) in text.\n2️⃣ Send the **Screenshot image** right after."
+        "📝 **Verification Requirements:**\n\n1️⃣ Send your **UTR / Reference Number** in text.\n2️⃣ Send the **Screenshot image** right after."
     )
     await callback.answer()
 
@@ -120,41 +141,46 @@ async def forward_to_admin_manual_check(client: Client, message: Message):
 
     content = message.text if message.text else message.caption
     if content:
-        # FIX 3 & 5: Tightened Regex specifically for Standard Indian Banking UTR/Ref Formats (12 Digits)
-        utr_match = re.search(r"\b\d{12}\b", content)
+        # FIX 2: Dynamic parsing accepts standard Alphanumeric UTR models (e.g. T240..., AXIS..., 12-Digits numeric sequences)
+        utr_match = re.search(r"\b[A-Za-z0-9]{8,22}\b", content)
         if utr_match:
-            detected_utr = utr_match.group(0)
+            detected_utr = utr_match.group(0).upper()
             utr_status = db.check_utr(detected_utr)
             if utr_status in ["PENDING", "APPROVED"]:
-                await message.reply_text("🚫 **Security Alert:** This UTR has already been submitted.")
+                await message.reply_text("🚫 **Security Alert:** This Transaction Ref/UTR has already been submitted.")
                 return
             state["utr"] = detected_utr
-            db.add_utr(detected_utr, user_id)
 
-    # FIX 4: Pyrogram Photo Object handler using high-res index marker [-1] safely
+    # FIX 1: Access highest resolution file index mapping target `[-1]` dynamically to stop runtime crashing elements 
     if message.photo:
-        state["photo"] = message.photo.file_id
+        state["photo"] = message.photo.file_id if hasattr(message.photo, 'file_id') else message.photo[-1].file_id
 
     if not state["utr"] or not state["photo"]:
         state["status"] = "COLLECTING"
-        await message.reply_text("⏳ Received part of data. Please provide the missing part (UTR text or Screenshot image).")
+        if not state["utr"]:
+            await message.reply_text("⏳ Please provide your text message listing the Transaction ID / UTR Number accurately.")
+        else:
+            await message.reply_text("⏳ UTR captured! Please dispatch your validation Image attachment capture right after.")
         return
 
+    # Commit transactions locking states right into DB lookup nodes parameters paths
+    db.add_utr(state["utr"], user_id)
     user_billing_state.pop(user_id, None)
+    
     username_ref = f"@{message.from_user.username}" if message.from_user.username else "No Username"
     
+    # FIX 3: Embed tracking variables code keys directly inside callback string layout pointers paths
     admin_keyboard = InlineKeyboardMarkup([
-        [InlineKeyboardButton("✅ Give Access (Approve)", callback_data=f"approve_{user_id}")],
-        [InlineKeyboardButton("❌ Reject Payment", callback_data=f"reject_{user_id}")]
+        [InlineKeyboardButton("✅ Give Access (Approve)", callback_data=f"approve_{state['utr']}_{user_id}")],
+        [InlineKeyboardButton("❌ Reject Payment", callback_data=f"reject_{state['utr']}_{user_id}")]
     ])
 
-    # FIX 2: Admin text values injected cleanly right into the photo caption log layout
     admin_caption = (
         f"💰 **New Verification Request!**\n\n"
         f"👤 **User:** {message.from_user.first_name}\n"
         f"🆔 **ID:** `{user_id}`\n"
         f"🌐 **Handle:** {username_ref}\n"
-        f"🔢 **UTR:** `{state['utr']}`"
+        f"🔢 **UTR Ref:** `{state['utr']}`"
     )
 
     await bot.send_photo(
@@ -165,42 +191,47 @@ async def forward_to_admin_manual_check(client: Client, message: Message):
     )
     await message.reply_text("⏳ **Submission Forwarded!** Admin is checking your details.")
 
-@bot.on_callback_query(filters.regex(r"^(approve|reject)_\d+$"))
+@bot.on_callback_query(filters.regex(r"^(approve|reject)_[A-Za-z0-9]{8,22}_\d+$"))
 async def execution_routing_control_switches(client: Client, callback: CallbackQuery):
-    action, target_user_str = callback.data.split("_", 1)
-    target_user_id = int(target_user_str)
+    # Parsing token arrays from parameters data strings mappings layout
+    data_parts = callback.data.split("_")
+    action = data_parts[0]
+    target_utr = data_parts[1]
+    target_user_id = int(data_parts[2])
 
     if action == "approve":
         try:
-            # FIX 1: Strict Native Unix timestamp epoch time calculation
             expire_timestamp = int(time.time()) + 86400
             invite_link_payload = await bot.create_chat_invite_link(
                 chat_id=TARGET_CHANNEL_ID,
                 member_limit=1,
                 expire_date=expire_timestamp
             )
-            db.update_status(target_user_id, "APPROVED")
+            
+            # FIX 3: Target lookups lock execution status criteria matching entries mappings parameters
+            db.update_status_by_utr(target_utr, "APPROVED")
             await bot.send_message(
                 chat_id=target_user_id,
                 text=f"🎉 **Payment Verified!**\n\nClick link below to access channel:\n👉 {invite_link_payload.invite_link}\n\n⚠️ _Expires in 24 hours._"
             )
-            await callback.message.edit_caption(caption=f"{callback.message.caption}\n\n✅ **APPROVED**")
+            await callback.message.edit_caption(caption=f"{callback.message.caption}\n\n✅ **APPROVED BLOCK TRACK**")
         except Exception as dynamic_failure_exception:
             await callback.message.reply_text(f"❌ **Link Error:** `{dynamic_failure_exception}`")
 
     elif action == "reject":
         try:
-            db.remove_failed_utr(target_user_id)
+            db.remove_utr(target_utr)
             await bot.send_message(
                 chat_id=target_user_id,
-                text="❌ **Payment Rejected!** Please try again with valid proof."
+                text="❌ **Payment Rejected!** Please try again with valid proof parameters logs."
             )
-            await callback.message.edit_caption(caption=f"{callback.message.caption}\n\n❌ **REJECTED**")
-        except Exception as e: print(f"Failed to reply: {e}")
+            await callback.message.edit_caption(caption=f"{callback.message.caption}\n\n❌ **REJECTED BLOCK TRACK**")
+        except Exception as e: 
+            print(f"Failed to reply: {e}")
     await callback.answer()
 
 async def main():
-    print("🔥 Bot Started Successfully!")
+    print("🔥 Secure Production Single Bot Framework Online.")
     await bot.start()
     await asyncio.Event().wait()
 
