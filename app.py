@@ -4,7 +4,7 @@ import types
 import time
 import sqlite3
 import re
-from datetime import datetime, timezone, timedelta  # <-- Fixed UTC time zones
+from datetime import datetime, timezone, timedelta
 
 # ==========================================
 # 🛑 CORE PYTHON 3.14 EVENT LOOP & PYROGRAM SYNC HOTFIX
@@ -24,6 +24,7 @@ if "pyrogram.sync" not in sys.modules:
 
 from pyrogram import Client, filters
 from pyrogram.types import InlineKeyboardMarkup, InlineKeyboardButton, Message, CallbackQuery
+from pyrogram.errors import UserIsBlocked, InputUserDeactivated, PeerIdInvalid
 
 # ==========================================
 # ⚙️ SECURE CONFIGURATION CONFIG
@@ -38,7 +39,7 @@ LOG_CHANNEL_ID = -1001639319995
 bot = Client("simple_pay_bot", api_id=API_ID, api_hash=API_HASH, bot_token=BOT_TOKEN)
 
 # ==========================================
-# 🗄️ AUTO-INCREMENT DATABANK HANDLER (FIX 1, 2 & 6)
+# 🗄️ EXTENDED DATABANK HANDLER (USERS TRACKING ADDED)
 # ==========================================
 class Database:
     def __init__(self):
@@ -51,7 +52,7 @@ class Database:
 
     def setup(self):
         conn, cursor = self._get_conn()
-        # FIX 1: Assigned integer PRIMARY KEY rowid to resolve Telegram's 64-byte payload barrier
+        # Payments Table
         cursor.execute('''
             CREATE TABLE IF NOT EXISTS payments (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -61,6 +62,49 @@ class Database:
                 timestamp INTEGER
             )
         ''')
+        # Users Table (New feature tracking)
+        cursor.execute('''
+            CREATE TABLE IF NOT EXISTS users (
+                user_id INTEGER PRIMARY KEY,
+                username TEXT,
+                first_name TEXT,
+                join_date INTEGER
+            )
+        ''')
+        conn.commit()
+        conn.close()
+
+    def check_user_exists(self, user_id):
+        conn, cursor = self._get_conn()
+        cursor.execute("SELECT user_id FROM users WHERE user_id = ?", (user_id,))
+        res = cursor.fetchone()
+        conn.close()
+        return True if res else False
+
+    def add_user(self, user_id, username, first_name):
+        conn, cursor = self._get_conn()
+        try:
+            cursor.execute(
+                "INSERT OR REPLACE INTO users (user_id, username, first_name, join_date) VALUES (?, ?, ?, ?)",
+                (user_id, username, first_name, int(time.time()))
+            )
+            conn.commit()
+            return True
+        except sqlite3.Error:
+            return False
+        finally:
+            conn.close()
+
+    def fetch_all_users(self):
+        conn, cursor = self._get_conn()
+        cursor.execute("SELECT user_id FROM users")
+        rows = cursor.fetchall()
+        conn.close()
+        return [row[0] for row in rows]
+
+    def remove_user(self, user_id):
+        conn, cursor = self._get_conn()
+        cursor.execute("DELETE FROM users WHERE user_id = ?", (user_id,))
         conn.commit()
         conn.close()
 
@@ -72,13 +116,9 @@ class Database:
         return res[0] if res else None
 
     def add_payment_intent(self, utr, user_id):
-        # FIX 2: Strict insertion status validation lookup
         conn, cursor = self._get_conn()
         try:
-            cursor.execute(
-                "INSERT INTO payments (utr, user_id, timestamp) VALUES (?, ?, ?)", 
-                (utr, user_id, int(time.time()))
-            )
+            cursor.execute("INSERT INTO payments (utr, user_id, timestamp) VALUES (?, ?, ?)", (utr, user_id, int(time.time())))
             conn.commit()
             last_id = cursor.lastrowid
         except sqlite3.IntegrityError:
@@ -115,7 +155,25 @@ user_billing_state = {}
 
 @bot.on_message(filters.command(["start", "help"]) & filters.private)
 async def start_handler(client: Client, message: Message):
-    user_billing_state.pop(message.from_user.id, None)
+    user_id = message.from_user.id
+    user_billing_state.pop(user_id, None)
+    
+    username_ref = f"@{message.from_user.username}" if message.from_user.username else "No Username"
+    
+    # 🆕 LOG NEW USER LOGIC: Logs to channel when a brand new user joins
+    if not db.check_user_exists(user_id):
+        db.add_user(user_id, message.from_user.username, message.from_user.first_name)
+        new_user_log = (
+            f"🆕 **New User Started the Bot!**\n\n"
+            f"👤 **Name:** {message.from_user.first_name}\n"
+            f"🆔 **ID:** `{user_id}`\n"
+            f"🌐 **Handle:** {username_ref}"
+        )
+        try:
+            await bot.send_message(chat_id=LOG_CHANNEL_ID, text=new_user_log)
+        except Exception as e:
+            print(f"Failed logging new user: {e}")
+            
     keyboard = InlineKeyboardMarkup([
         [InlineKeyboardButton("💳 Pay Now", callback_data="show_qr")],
         [InlineKeyboardButton("📞 Support", url=f"tg://user?id={ADMIN_ID}")]
@@ -125,11 +183,64 @@ async def start_handler(client: Client, message: Message):
         reply_markup=keyboard
     )
 
+# 📢 ADMIN BROADCAST LOGIC (Sends any text message replied with /broadcast to everyone)
+@bot.on_message(filters.command("broadcast") & filters.user(ADMIN_ID) & filters.private)
+async def broadcast_handler(client: Client, message: Message):
+    if not message.reply_to_message:
+        await message.reply_text("❌ Please use `/broadcast` as a **reply** to the message you want to blast to everyone.")
+        return
+
+    broadcast_msg = message.reply_to_message
+    all_users = db.fetch_all_users()
+    
+    status_update_msg = await message.reply_text(f"⏳ **Starting Broadcast Blast...** Target: `{len(all_users)}` users.")
+    
+    success_count = 0
+    blocked_count = 0
+    failed_count = 0
+
+    for idx, user_id in enumerate(all_users):
+        try:
+            await broadcast_msg.copy(chat_id=user_id)
+            success_count += 1
+        except (UserIsBlocked, InputUserDeactivated):
+            # 🚫 USER BLOCKED LOGIC: Handle blocks, log it and remove from active DB lists
+            blocked_count += 1
+            db.remove_user(user_id)
+            try:
+                await bot.send_message(
+                    chat_id=LOG_CHANNEL_ID,
+                    text=f"🚫 **User Cleaned Up from Database!**\nReason: Bot was blocked/deactivated.\n🆔 **User ID:** `{user_id}`"
+                )
+            except Exception:
+                pass
+        except Exception:
+            failed_count += 1
+            
+        # Update progress counter dynamically every 15 entries
+        if idx % 15 == 0:
+            try:
+                await status_update_msg.edit_text(f"⏳ Processing: `{idx}/{len(all_users)}` finished...")
+            except Exception:
+                pass
+        await asyncio.sleep(0.05)  # Flood avoidance rate limiter
+
+    # Send Complete Stats Directly To Log Channel
+    final_report = (
+        f"📢 **Broadcast Campaign Finished Report!**\n\n"
+        f"✅ **Sent Successfully:** `{success_count}`\n"
+        f"🚫 **Users Blocked (Removed):** `{blocked_count}`\n"
+        f"⚠️ **Failed/Expired Peers:** `{failed_count}`\n\n"
+        f"📊 Total Database Pipeline Targets: `{len(all_users)}`"
+    )
+    await status_update_msg.edit_text("✅ Broadcast operational run complete. Statistics sent to logs channel.")
+    await bot.send_message(chat_id=LOG_CHANNEL_ID, text=final_report)
+
 @bot.on_callback_query(filters.regex("^show_qr$"))
 async def show_qr_handler(client: Client, callback: CallbackQuery):
     keyboard = InlineKeyboardMarkup([[InlineKeyboardButton("✅ I Have Paid", callback_data="confirm_paid")]])
     await callback.message.reply_text(
-        "🤖 **Payment Details Gateway Ledger**:\n\n▫️ **UPI ID:** `sacfehands@ibl`\n▫️ **Amount:** `₹99`\n\n📌 _Send payment screenshots and UTR sequences down below._",
+        "🤖 **Payment Details Gateway Ledger**:\n\n▫️ **UPI ID:** `safehands@ibl`\n▫️ **Amount:** `₹99`\n\n📌 _Send payment screenshots and UTR sequences down below._",
         reply_markup=keyboard
     )
     await callback.answer()
@@ -142,7 +253,7 @@ async def instruct_user_inputs(client: Client, callback: CallbackQuery):
     )
     await callback.answer()
 
-@bot.on_message((filters.text | filters.photo) & filters.private & ~filters.command(["start", "help"]))
+@bot.on_message((filters.text | filters.photo) & filters.private & ~filters.command(["start", "help", "broadcast"]))
 async def forward_to_admin_manual_check(client: Client, message: Message):
     user_id = message.from_user.id
     if user_id == ADMIN_ID: return 
@@ -154,7 +265,6 @@ async def forward_to_admin_manual_check(client: Client, message: Message):
 
     content = message.text if message.text else message.caption
     if content:
-        # Strict matching specifically targeting clear transactional reference keys block formats
         utr_match = re.search(r"\b[A-Za-z0-9]{8,22}\b", content)
         if utr_match:
             detected_utr = utr_match.group(0).upper()
@@ -164,7 +274,6 @@ async def forward_to_admin_manual_check(client: Client, message: Message):
                 return
             state["utr"] = detected_utr
 
-    # FIX 3: Safe nested photo file_id discovery engine across differing Pyrogram versions
     if message.photo:
         if isinstance(message.photo, list):
             state["photo"] = message.photo[-1].file_id
@@ -179,16 +288,14 @@ async def forward_to_admin_manual_check(client: Client, message: Message):
             await message.reply_text("⏳ UTR captured! Please dispatch your validation Image attachment capture right after.")
         return
 
-    # FIX 2: Check returned insertion primary key row sequence
     inserted_row_id = db.add_payment_intent(state["utr"], user_id)
     if not inserted_row_id:
-        await message.reply_text("🚫 **Race Condition Conflict Alert:** Transaction verification pipeline drops identical entries submission tracks loops.")
+        await message.reply_text("🚫 **Race Condition Conflict Alert:** Transaction verification pipeline drops identical entries.")
         return
 
     user_billing_state.pop(user_id, None)
     username_ref = f"@{message.from_user.username}" if message.from_user.username else "No Username"
     
-    # FIX 1: Passing ONLY short database row IDs inside callback payloads ensures it stays way below 64 bytes
     admin_keyboard = InlineKeyboardMarkup([
         [InlineKeyboardButton("✅ Give Access", callback_data=f"appv_{inserted_row_id}")],
         [InlineKeyboardButton("❌ Reject Payment", callback_data=f"rejc_{inserted_row_id}")]
@@ -210,16 +317,14 @@ async def forward_to_admin_manual_check(client: Client, message: Message):
     )
     await message.reply_text("⏳ **Submission Forwarded!** Admin verification team is checking details in logs channel.")
 
-# FIX 1: Compact pattern routing listener intercepts micro payloads perfectly
 @bot.on_callback_query(filters.regex(r"^(appv|rejc)_\d+$"))
 async def execution_routing_control_switches(client: Client, callback: CallbackQuery):
     action, row_id_str = callback.data.split("_")
     db_row_id = int(row_id_str)
     
-    # Fetch original tracking variables mapping records direct from databank row
     payment_record = db.fetch_record_by_id(db_row_id)
     if not payment_record:
-        await callback.message.edit_caption(caption="❌ **Error:** Target database allocation reference trace logs completely deleted or lost.")
+        await callback.message.edit_caption(caption="❌ **Error:** Target database allocation reference trace logs completely lost.")
         await callback.answer()
         return
 
@@ -228,9 +333,7 @@ async def execution_routing_control_switches(client: Client, callback: CallbackQ
 
     if action == "appv":
         try:
-            # FIX 4: Implemented safe explicit timezone-aware UTC datetime parameters objects
             expire_datetime_obj = datetime.now(timezone.utc) + timedelta(days=1)
-            
             invite_link_payload = await bot.create_chat_invite_link(
                 chat_id=TARGET_CHANNEL_ID,
                 member_limit=1,
@@ -244,7 +347,7 @@ async def execution_routing_control_switches(client: Client, callback: CallbackQ
             )
             await callback.message.edit_caption(caption=f"{callback.message.caption}\n\n🟢 **STATUS:** APPROVED TRACK LOG")
         except Exception as dynamic_failure_exception:
-            await callback.message.reply_text(f"❌ **Link Error Exception:** `{dynamic_failure_exception}`")
+            await callback.message.reply_text(f"❌ **Link Error:** `{dynamic_failure_exception}`")
 
     elif action == "rejc":
         try:
@@ -259,7 +362,7 @@ async def execution_routing_control_switches(client: Client, callback: CallbackQ
     await callback.answer()
 
 async def main():
-    print("🔥 Secure Production Single Bot Framework Online with Log Channel routing active.")
+    print("🔥 Secure Production Single Bot Framework Online with Extended Monitoring Engine.")
     await bot.start()
     await asyncio.Event().wait()
 
