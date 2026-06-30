@@ -1,17 +1,17 @@
 import asyncio
 import sys
+import types
 
 # ==========================================
-# 🛑 CORE HOTFIX FOR PYTHON 3.14 LOOP ISSUES
+# 🛑 PYROGRAM PYTHON 3.14 INTUITIVE MODULE HOTFIX
 # ==========================================
-try:
-    loop = asyncio.get_event_loop()
-except RuntimeError:
-    loop = asyncio.new_event_loop()
-    asyncio.set_event_loop(loop)
-
-# Prevent pyrogram from loading internal crashing sync logic engines
-sys.modules["pyrogram.sync"] = None 
+# Instead of None, inject a mock fake module to bypass recursive load errors completely
+if "pyrogram.sync" not in sys.modules:
+    mock_sync_module = types.ModuleType("pyrogram.sync")
+    mock_sync_module.async_to_sync = lambda source, name=None: source
+    mock_sync_module.idle = lambda: None
+    mock_sync_module.compose = lambda: None
+    sys.modules["pyrogram.sync"] = mock_sync_module
 
 import re
 from pyrogram import Client, filters
@@ -71,7 +71,6 @@ async def instruct_user_inputs(client: Client, callback: CallbackQuery):
     )
     await callback.answer()
 
-# FIX: Added ~filters.command to prevent /start or other commands from being forwarded
 @bot.on_message((filters.text | filters.photo) & filters.private & ~filters.command)
 async def forward_to_admin_manual_check(client: Client, message: Message):
     if message.from_user.id == ADMIN_ID:
@@ -140,7 +139,15 @@ async def execution_routing_control_switches(client: Client, callback: CallbackQ
 async def main():
     print("🔥 Single Bot Manual Approvals Infrastructure Booting Context System States...")
     await bot.start()
-    await asyncio.Event().wait()
+    # Keep application loop open asynchronously without thread crash properties
+    while True:
+        await asyncio.sleep(3600)
 
 if __name__ == "__main__":
+    try:
+        loop = asyncio.get_event_loop()
+    except RuntimeError:
+        loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(loop)
+        
     loop.run_until_complete(main())
