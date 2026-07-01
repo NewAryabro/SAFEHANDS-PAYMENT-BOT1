@@ -68,7 +68,6 @@ PLANS = {
     "premium": {"name": "Ultimate Premium Plan", "price_inr": 299, "price_usd": 3.60}
 }
 
-# Strict HTML Parse Mode
 bot = Client(
     "simple_pay_bot", 
     api_id=API_ID, 
@@ -83,6 +82,10 @@ db = mongo_client["premium_payment_bot"]
 users_col = db["users"]
 payments_col = db["payments"]
 states_col = db["states"]
+
+# ==========================================
+# 🗄️ ASYNCHRONOUS MONGODB CLOUD DATABASE PIPELINE
+# ==========================================
 class DBManager:
     @staticmethod
     async def check_user_exists(user_id):
@@ -199,9 +202,13 @@ def get_local_upi_qr(amount: int) -> BytesIO:
     bio.name = "payment_qr.png"
     bio.seek(0)
     return bio
+
+# ==========================================
+# 🤖 MIDDLEWARE AND ACTION SECURITY ROUTERS
+# ==========================================
 async def check_banned_middleware(message: Message):
     if await DBManager.is_user_banned(message.from_user.id):
-        await message.reply_text("<b>🚫 Access Denied:</b> Your profile has been blacklisted.")
+        await message.reply_text("<b>🚫 Access Denied:</b> Your profile has been blacklisted.", parse_mode=enums.ParseMode.HTML)
         return True
     return False
 
@@ -219,7 +226,7 @@ async def start_handler(client: Client, message: Message):
             f"🆕 <b>New User Started Bot!</b>\n\n👤 <b>Name:</b> {message.from_user.first_name}\n"
             f"🆔 <b>ID:</b> <code>{user_id}</code>\n🌐 <b>Handle:</b> {username_ref}"
         )
-        try: await bot.send_message(chat_id=LOG_CHANNEL_ID, text=new_user_log)
+        try: await bot.send_message(chat_id=LOG_CHANNEL_ID, text=new_user_log, parse_mode=enums.ParseMode.HTML)
         except Exception as e: logging.exception(e)
             
     keyboard = InlineKeyboardMarkup([
@@ -227,9 +234,11 @@ async def start_handler(client: Client, message: Message):
         [InlineKeyboardButton(f"🚀 Premium Full Year: ₹299 (${PLANS['premium']['price_usd']:.2f})", callback_data="select_premium")],
         [InlineKeyboardButton("📞 Support Desk", url=f"tg://user?id={ADMIN_ID}")]
     ])
+    
     await message.reply_text(
-        "👋 <b>Welcome to Premium Channels Gateway Portal</b>\n\n⚡ Select your subscription plan below to generate an instant payment token:",
-        reply_markup=keyboard
+        f"<b><blockquote>👋 Hello {message.from_user.first_name},\n\nWelcome to Premium Channels Gateway Portal. Select your subscription plan below to generate an instant payment token:</blockquote></b>",
+        reply_markup=keyboard,
+        parse_mode=enums.ParseMode.HTML
     )
 
 @bot.on_callback_query(filters.regex(r"^select_(standard|premium)$"))
@@ -252,20 +261,19 @@ async def plan_selection_handler(client: Client, callback: CallbackQuery):
         
         await callback.message.reply_photo(photo=qr_stream)
         
-        # Explicit isolated visual envelope layout
         invoice_text = (
-            f"🤖 <b>Payment Session Invoice Generated</b>\n"
+            f"<b>🤖 Payment Session Invoice Generated</b>\n"
             f"━━━━━━━━━━━━━━━━━━━━\n"
-            f"<blockquote>📦 <b>Selected Plan:</b> <code>{selected_plan['name']}</code>\n"
-            f"💳 <b>Fixed Amount:</b> <code>₹{selected_plan['price_inr']} (${selected_plan['price_usd']:.2f})</code>\n"
-            f"📌 <b>UPI ID Ref:</b> <code>{UPI_ID}</code>\n\n"
-            f"Please complete your transfer, capture a screenshot, and click verify.</blockquote>"
+            f"<b><blockquote>📦 Selected Plan: <code>{selected_plan['name']}</code>\n"
+            f"💳 Fixed Amount: <code>₹{selected_plan['price_inr']} (${selected_plan['price_usd']:.2f})</code>\n"
+            f"📌 UPI ID Ref: <code>{UPI_ID}</code>\n\n"
+            f"Please complete your transfer, capture a screenshot confirmation dashboard, then click verify button below.</blockquote></b>"
         )
-        await callback.message.reply_text(invoice_text, reply_markup=keyboard)
+        await callback.message.reply_text(invoice_text, reply_markup=keyboard, parse_mode=enums.ParseMode.HTML)
         await callback.message.delete()
     except Exception as e:
         logging.exception(e)
-        await callback.message.reply_text("❌ <b>Invoice Engine Failure.</b> Please try again or contact support.")
+        await callback.message.reply_text("❌ <b>Invoice Engine Failure.</b> Please try again or contact support.", parse_mode=enums.ParseMode.HTML)
     finally:
         await callback.answer()
 
@@ -274,23 +282,26 @@ async def crypto_link_alert_handler(client: Client, callback: CallbackQuery):
     plan_key = callback.data.split("_")[1]
     selected_plan = PLANS[plan_key]
     
-    await DBManager.set_user_state(callback.from_user.id, {"method": "CRYPTO"})
+    # Secure State Sync Fixed
+    state = await DBManager.get_user_state(callback.from_user.id)
+    if state:
+        state["method"] = "CRYPTO"
+        await DBManager.set_user_state(callback.from_user.id, state)
     
-    # Fully wrapped structured string blocks
     crypto_text = (
-        f"🪙 <b>USDT Secure Invoicing Layer Assets</b>\n"
+        f"<b>🪙 USDT Secure Invoicing Layer Assets</b>\n"
         f"━━━━━━━━━━━━━━━━━━━━\n"
-        f"<blockquote>📦 <b>Plan:</b> <code>{selected_plan['name']}</code>\n"
-        f"💵 <b>Amount Due:</b> <code>${selected_plan['price_usd']:.2f} USDT</code>\n\n"
-        f"<b>Tap any wallet address to copy instantly:</b>\n\n"
-        f"🌐 <b>TRC20 Network Address:</b>\n<code>{USDT_TRC20}</code>\n\n"
-        f"⚡ <b>BEP20 Network Address:</b>\n<code>{USDT_BEP20}</code>\n\n"
-        f"💜 <b>Polygon POS Network Address:</b>\n<code>{USDT_POLYGON}</code>\n\n"
-        f"Complete transfer, capture transaction hash screen, then click verify below.</blockquote>"
+        f"<b><blockquote>📦 Plan: <code>{selected_plan['name']}</code>\n"
+        f"💵 Amount Due: <code>${selected_plan['price_usd']:.2f} USDT</code>\n\n"
+        f"Tap any wallet address to copy instantly:\n\n"
+        f"🌐 TRC20 Network Address:\n<code>{USDT_TRC20}</code>\n\n"
+        f"⚡ BEP20 Network Address:\n<code>{USDT_BEP20}</code>\n\n"
+        f"💜 Polygon POS Network Address:\n<code>{USDT_POLYGON}</code>\n\n"
+        f"Complete transfer, capture transaction hash screen, then click verify below.</blockquote></b>"
     )
     
     keyboard = InlineKeyboardMarkup([[InlineKeyboardButton("✅ Proceed to Verify Payment", callback_data="confirm_paid")]])
-    await callback.message.reply_text(crypto_text, reply_markup=keyboard)
+    await callback.message.reply_text(crypto_text, reply_markup=keyboard, parse_mode=enums.ParseMode.HTML)
     await callback.message.delete()
     await callback.answer()
 
@@ -299,26 +310,27 @@ async def instruct_user_inputs(client: Client, callback: CallbackQuery):
     if await DBManager.is_user_banned(callback.from_user.id): return
     state = await DBManager.get_user_state(callback.from_user.id)
     if not state:
-        await callback.message.reply_text("❌ Session expired. Please send `/start` again.")
+        await callback.message.reply_text("❌ Session expired. Please send `/start` again.", parse_mode=enums.ParseMode.HTML)
         await callback.answer()
         return
         
-    await DBManager.set_user_state(callback.from_user.id, {"status": "AWAITING_DATA"})
+    state["status"] = "AWAITING_DATA"
+    await DBManager.set_user_state(callback.from_user.id, state)
     
     if state.get("method") == "CRYPTO":
         prompt_text = (
-            "📝 <b>Verification Requirements (USDT Crypto)</b>\n\n"
-            "<blockquote>1️⃣ Send your <b>64-character Transaction Hash / TxID string</b> in text format.\n"
-            "2️⃣ Send the transaction confirmation <b>Screenshot image</b> right after.</blockquote>"
+            "<b>📝 Verification Requirements (USDT Crypto)</b>\n\n"
+            "<b><blockquote>1️⃣ Send your 64-character Transaction Hash / TxID string in text format.\n"
+            "2️⃣ Send the transaction confirmation Screenshot image right after.</blockquote></b>"
         )
     else:
         prompt_text = (
-            "📝 <b>Verification Requirements (UPI Fiat)</b>\n\n"
-            "<blockquote>1️⃣ Send your <b>12-digit numeric UTR / Reference Number</b> in text format.\n"
-            "2️⃣ Send the bank receipt <b>Screenshot image</b> right after.</blockquote>"
+            "<b>📝 Verification Requirements (UPI Fiat)</b>\n\n"
+            "<b><blockquote>1️⃣ Send your 12-digit numeric UTR / Reference Number in text format.\n"
+            "2️⃣ Send the bank receipt Screenshot image right after.</blockquote></b>"
         )
         
-    await callback.message.reply_text(prompt_text)
+    await callback.message.reply_text(prompt_text, parse_mode=enums.ParseMode.HTML)
     await callback.answer()
 
 @bot.on_message(filters.command("status") & filters.private)
@@ -330,16 +342,16 @@ async def status_dashboard_handler(client: Client, message: Message):
     lifetime_usd = stats['lifetime_revenue'] / 83.33
     
     report = (
-        f"📊 <b>Premium Payments & Financial Ledger Status</b>\n"
+        f"<b>📊 Premium Payments & Financial Ledger Status</b>\n"
         f"━━━━━━━━━━━━━━━━━━━━\n\n"
-        f"<blockquote>👥 <b>Total Registered Users:</b> <code>{stats['total_users']}</code>\n"
-        f"📈 <b>Total Paid Transactions:</b> <code>{stats['approved_count']}</code>\n"
-        f"⏳ <b>Pending Verification Queue:</b> <code>{stats['pending_queue']}</code>\n\n"
-        f"💵 <b>This Month Gross Revenue:</b> <code>Rupees: ₹{stats['month_revenue']} (${month_usd:.2f})</code>\n"
-        f"💰 <b>Lifetime Net Revenue Assets:</b> <code>Rupees: ₹{stats['lifetime_revenue']} (${lifetime_usd:.2f})</code>\n\n"
-        f"🕒 <b>Server Sync Zone:</b> <code>{datetime.now(timezone.utc).strftime('%Y-%m-%d %H:%M UTC')}</code></blockquote>"
+        f"<b><blockquote>👥 Total Registered Users: <code>{stats['total_users']}</code>\n"
+        f"📈 Total Paid Transactions: <code>{stats['approved_count']}</code>\n"
+        f"⏳ Pending Verification Queue: <code>{stats['pending_queue']}</code>\n\n"
+        f"💵 This Month Gross Revenue: <code>Rupees: ₹{stats['month_revenue']} (${month_usd:.2f})</code>\n"
+        f"💰 Lifetime Net Revenue Assets: <code>Rupees: ₹{stats['lifetime_revenue']} (${lifetime_usd:.2f})</code>\n\n"
+        f"🕒 Server Sync Zone: <code>{datetime.now(timezone.utc).strftime('%Y-%m-%d %H:%M UTC')}</code></blockquote></b>"
     )
-    await message.reply_text(report)
+    await message.reply_text(report, parse_mode=enums.ParseMode.HTML)
 
 @bot.on_message(filters.command("ban") & filters.private)
 async def ban_user_handler(client: Client, message: Message):
@@ -350,11 +362,11 @@ async def ban_user_handler(client: Client, message: Message):
     target_id = int(target_id_str)
     
     await DBManager.set_ban_status(target_id, 1)
-    await message.reply_text(f"✅ User <code>{target_id}</code> Blacklisted.")
+    await message.reply_text(f"✅ User <code>{target_id}</code> Blacklisted.", parse_mode=enums.ParseMode.HTML)
     try:
-        await bot.send_message(chat_id=LOG_CHANNEL_ID, text=f"🔨 <b>Admin Ban:</b> User <code>{target_id}</code> banned.")
-        await bot.send_message(chat_id=target_id, text="🚫 Your account has been blacklisted by the Administrator.")
-    except Exception as e: logging.exception(e)
+        await bot.send_message(chat_id=LOG_CHANNEL_ID, text=f"🔨 <b>Admin Ban:</b> User <code>{target_id}</code> banned.", parse_mode=enums.ParseMode.HTML)
+        await bot.send_message(chat_id=target_id, text="🚫 Your account has been blacklisted by the Administrator.", parse_mode=enums.ParseMode.HTML)
+    except Exception: pass
 
 @bot.on_message(filters.command("unban") & filters.private)
 async def unban_user_handler(client: Client, message: Message):
@@ -365,9 +377,9 @@ async def unban_user_handler(client: Client, message: Message):
     target_id = int(target_id_str)
     
     await DBManager.set_ban_status(target_id, 0)
-    await message.reply_text(f"✅ User <code>{target_id}</code> Whitelisted.")
-    try: await bot.send_message(chat_id=target_id, text="🎉 Your account has been unbanned!")
-    except Exception as e: logging.exception(e)
+    await message.reply_text(f"✅ User <code>{target_id}</code> Whitelisted.", parse_mode=enums.ParseMode.HTML)
+    try: await bot.send_message(chat_id=target_id, text="🎉 Your account has been unbanned!", parse_mode=enums.ParseMode.HTML)
+    except Exception: pass
 
 async def send_single_broadcast(broadcast_msg: Message, user_id: int):
     try:
@@ -383,8 +395,7 @@ async def send_single_broadcast(broadcast_msg: Message, user_id: int):
     except (UserIsBlocked, InputUserDeactivated):
         await DBManager.remove_user(user_id)
         return "BLOCKED"
-    except Exception as e:
-        logging.debug(f"Failed delivery to {user_id}: {e}")
+    except Exception:
         return "FAILED"
 
 @bot.on_message(filters.command("broadcast") & filters.private)
@@ -394,7 +405,7 @@ async def broadcast_handler(client: Client, message: Message):
     
     broadcast_msg = message.reply_to_message
     all_users = await DBManager.fetch_all_users()
-    status_update_msg = await message.reply_text(f"⏳ <b>Starting Parallel Broadcast Blast...</b> Target: <code>{len(all_users)}</code> users.")
+    status_update_msg = await message.reply_text(f"⏳ <b>Starting Parallel Broadcast Blast...</b> Target: <code>{len(all_users)}</code> users.", parse_mode=enums.ParseMode.HTML)
     
     success_count, blocked_count, failed_count = 0, 0, 0
     batch_size = 30
@@ -409,14 +420,15 @@ async def broadcast_handler(client: Client, message: Message):
             elif res == "BLOCKED": blocked_count += 1
             elif res == "FAILED": failed_count += 1
             
-        try: await status_update_msg.edit_text(f"⏳ Progress: <code>{min(i + batch_size, len(all_users))}/{len(all_users)}</code> processed...")
+        try: await status_update_msg.edit_text(f"⏳ Progress: <code>{min(i + batch_size, len(all_users))}/{len(all_users)}</code> processed...", parse_mode=enums.ParseMode.HTML)
         except Exception: pass
         await asyncio.sleep(0.2)
         
-    await status_update_msg.edit_text("✅ Parallel broadcast complete.")
+    await status_update_msg.edit_text("✅ Parallel broadcast complete.", parse_mode=enums.ParseMode.HTML)
     await bot.send_message(
         chat_id=LOG_CHANNEL_ID, 
-        text=f"📢 <b>Broadcast Matrix Report:</b>\n\n✅ Success: <code>{success_count}</code>\n🚫 Blocked/Removed: <code>{blocked_count}</code>\n⚠️ Failed: <code>{failed_count}</code>"
+        text=f"📢 <b>Broadcast Matrix Report:</b>\n\n✅ Success: <code>{success_count}</code>\n🚫 Blocked/Removed: <code>{blocked_count}</code>\n⚠️ Failed: <code>{failed_count}</code>",
+        parse_mode=enums.ParseMode.HTML
     )
 
 @bot.on_message(filters.chat(LOG_CHANNEL_ID) & filters.reply)
@@ -427,10 +439,10 @@ async def livegram_reply_routing_handler(client: Client, message: Message):
 
     try:
         await message.copy(chat_id=target_user_id)
-        await message.reply_text(f"🚀 <b>Livegram Reply Dispatched to User:</b> <code>{target_user_id}</code>")
+        await message.reply_text(f"🚀 <b>Livegram Reply Dispatched to User:</b> <code>{target_user_id}</code>", parse_mode=enums.ParseMode.HTML)
     except Exception as e:
         logging.exception(e)
-        await message.reply_text(f"❌ <b>Delivery Exception Failure:</b> <code>{e}</code>")
+        await message.reply_text(f"❌ <b>Delivery Exception Failure:</b> <code>{e}</code>", parse_mode=enums.ParseMode.HTML)
 
 @bot.on_message(filters.private & ~filters.command(["start", "help", "broadcast", "status", "ban", "unban"]))
 async def forward_to_admin_manual_check(client: Client, message: Message):
@@ -440,7 +452,7 @@ async def forward_to_admin_manual_check(client: Client, message: Message):
 
     state = await DBManager.get_user_state(user_id)
     if not state or state.get("status") not in ["AWAITING_DATA", "COLLECTING"]:
-        await message.reply_text("👋 Hello! Please send `/start` and select a subscription plan.")
+        await message.reply_text("👋 Hello! Please send `/start` and select a subscription plan.", parse_mode=enums.ParseMode.HTML)
         return
 
     content = message.text if message.text else message.caption
@@ -450,27 +462,28 @@ async def forward_to_admin_manual_check(client: Client, message: Message):
             detected_utr = utr_match.group(0).upper()
             utr_status = await DBManager.check_utr(detected_utr)
             if utr_status in ["PENDING", "APPROVED"]:
-                await message.reply_text("🚫 <b>Security Alert:</b> This Reference/TxID has already been submitted.")
+                await message.reply_text("🚫 <b>Security Alert:</b> This Reference/TxID has already been submitted.", parse_mode=enums.ParseMode.HTML)
                 return
             state["utr"] = detected_utr
-            await DBManager.set_user_state(user_id, {"utr": detected_utr})
+            await DBManager.set_user_state(user_id, state)
 
     if message.photo:
         photo_id = message.photo.file_id
         state["photo"] = photo_id
-        await DBManager.set_user_state(user_id, {"photo": photo_id})
+        await DBManager.set_user_state(user_id, state)
 
     if not state.get("utr") or not state.get("photo"):
-        await DBManager.set_user_state(user_id, {"status": "COLLECTING"})
+        state["status"] = "COLLECTING"
+        await DBManager.set_user_state(user_id, state)
         if not state.get("utr"):
-            await message.reply_text("⏳ Please provide your Reference / UTR / TxID string accurately.")
+            await message.reply_text("⏳ Please provide your Reference / UTR / TxID string accurately.", parse_mode=enums.ParseMode.HTML)
         else:
-            await message.reply_text("⏳ Reference captured! Please dispatch your validation Screenshot image right after.")
+            await message.reply_text("⏳ Reference captured! Please dispatch your validation Screenshot image right after.", parse_mode=enums.ParseMode.HTML)
         return
 
     inserted_row_id = await DBManager.add_payment_intent(state["utr"], user_id, state["price"])
     if not inserted_row_id:
-        await message.reply_text("🚫 <b>Conflict Error:</b> Duplicate transaction token mismatch dropped.")
+        await message.reply_text("🚫 <b>Conflict Error:</b> Duplicate transaction token mismatch dropped.", parse_mode=enums.ParseMode.HTML)
         return
 
     plan_name = PLANS[state["plan"]]["name"]
@@ -493,10 +506,10 @@ async def forward_to_admin_manual_check(client: Client, message: Message):
     )
 
     log_message_node = await bot.send_photo(
-        chat_id=LOG_CHANNEL_ID, photo=state["photo"], caption=admin_caption, reply_markup=admin_keyboard
+        chat_id=LOG_CHANNEL_ID, photo=state["photo"], caption=admin_caption, reply_markup=admin_keyboard, parse_mode=enums.ParseMode.HTML
     )
     await DBManager.update_log_message_id(inserted_row_id, log_message_node.id)
-    await message.reply_text("⏳ <b>Submission Forwarded!</b> Admin verification team is checking details.")
+    await message.reply_text("⏳ <b>Submission Forwarded!</b> Admin verification team is checking details.", parse_mode=enums.ParseMode.HTML)
 
 @bot.on_callback_query(filters.regex(r"^(appv|rejc)_[a-f0-9]{16}$"))
 async def execution_routing_control_switches(client: Client, callback: CallbackQuery):
@@ -508,7 +521,7 @@ async def execution_routing_control_switches(client: Client, callback: CallbackQ
     
     payment_record = await DBManager.fetch_record_by_id(row_id_str)
     if not payment_record:
-        await callback.message.edit_caption(caption="❌ <b>Error:</b> Target database reference lost.")
+        await callback.message.edit_caption(caption="❌ <b>Error:</b> Target database reference lost.", parse_mode=enums.ParseMode.HTML)
         await callback.answer()
         return
 
@@ -529,12 +542,13 @@ async def execution_routing_control_switches(client: Client, callback: CallbackQ
             
             await bot.send_message(
                 chat_id=target_user_id,
-                text=f"🎉 <b>Payment Verified!</b>\n\nClick link below to access channel:\n👉 {invite_link_payload.invite_link}\n\n⚠️ <i>Expires in 24 hours.</i>"
+                text=f"🎉 <b>Payment Verified!</b>\n\nClick link below to access channel:\n👉 {invite_link_payload.invite_link}\n\n⚠️ <i>Expires in 24 hours.</i>",
+                parse_mode=enums.ParseMode.HTML
             )
-            await callback.message.edit_caption(caption=f"{callback.message.caption}\n\n🟢 <b>STATUS: APPROVED TRACK LOG</b>")
+            await callback.message.edit_caption(caption=f"{callback.message.caption}\n\n🟢 <b>STATUS: APPROVED TRACK LOG</b>", parse_mode=enums.ParseMode.HTML)
         except Exception as e:
             logging.exception(e)
-            await callback.message.reply_text(f"❌ <b>Link Creation Engine Failure:</b> <code>{e}</code>")
+            await callback.message.reply_text(f"❌ <b>Link Creation Engine Failure:</b> <code>{e}</code>", parse_mode=enums.ParseMode.HTML)
 
     elif action == "rejc":
         try:
@@ -543,9 +557,10 @@ async def execution_routing_control_switches(client: Client, callback: CallbackQ
             
             await bot.send_message(
                 chat_id=target_user_id,
-                text="❌ <b>Payment Rejected!</b> Please try again with valid screenshot parameters."
+                text="❌ <b>Payment Rejected!</b> Please try again with valid screenshot parameters.",
+                parse_mode=enums.ParseMode.HTML
             )
-            await callback.message.edit_caption(caption=f"{callback.message.caption}\n\n🔴 <b>STATUS: REJECTED TRACK LOG</b>")
+            await callback.message.edit_caption(caption=f"{callback.message.caption}\n\n🔴 <b>STATUS: REJECTED TRACK LOG</b>", parse_mode=enums.ParseMode.HTML)
         except Exception as e: 
             logging.exception(e)
             
@@ -573,7 +588,7 @@ async def main():
     except Exception as idx_err:
         logging.warning(f"⚠️ Index compilation structural notice: {idx_err}")
 
-    logging.info("🔥 Hardened Enterprise Production Single Bot Framework Online with Luxury HTML UI.")
+    logging.info("🔥 Hardened Enterprise Production Single Bot Framework Online.")
     await bot.start()
     await asyncio.Event().wait()
 
