@@ -332,7 +332,6 @@ async def instruct_user_inputs(client: Client, callback: CallbackQuery):
         
     state = await DBManager.get_user_state(callback.from_user.id)
     if not state:
-        # Fix 3: Lock spinners gracefully on early session trace drops
         await callback.answer("❌ Verification Session Expired. Please restart.", show_alert=True)
         return
         
@@ -480,9 +479,8 @@ async def forward_to_admin_manual_check(client: Client, message: Message):
     content = message.text if message.text else message.caption
     if content:
         detected_utr = None
-        # Fix 4: Enhanced absolute standard hashes validation (Catches Tron/EVM 64-char keys safely)
         upi_match = re.search(r"\b\d{12}\b", content)
-        crypto_match = re.search(r"\b(0X)?[A-Fa-f0-9]{64}\b", content.upper())
+        crypto_match = re.search(r"\b(0X)?[A-FA-F0-9]{64}\b", content.upper())
         
         if upi_match:
             detected_utr = upi_match.group(0)
@@ -492,7 +490,6 @@ async def forward_to_admin_manual_check(client: Client, message: Message):
         if detected_utr:
             utr_status = await DBManager.check_utr(detected_utr)
             if utr_status in ["PENDING", "APPROVED"]:
-                # Fix 5: Specific explicit error logging mapping for duplicate entries
                 await message.reply_text("🚫 <b>Security Alert:</b> This Transaction Reference / TxID has already been submitted.")
                 return
             state["utr"] = detected_utr
@@ -514,11 +511,10 @@ async def forward_to_admin_manual_check(client: Client, message: Message):
 
     inserted_row_id = await DBManager.add_payment_intent(state["utr"], user_id, state["price"])
     if not inserted_row_id:
-        # Fix 5: Graceful error warning response handling upon duplicate race conditions mutations
         await message.reply_text("🚫 <b>Security Exception:</b> This exact TxID/UTR database trace token already exists inside our verification pipelines.")
         return
 
-    plan_name = html.escape(PLANS[state["plan"]]["name"]) # Fix 1: Escaped runtime assignments
+    plan_name = html.escape(PLANS[state["plan"]]["name"])
     method_used = html.escape(state.get("method", "FIAT"))
     await DBManager.clear_user_state(user_id)
     
@@ -541,7 +537,7 @@ async def forward_to_admin_manual_check(client: Client, message: Message):
         chat_id=LOG_CHANNEL_ID, photo=state["photo"], caption=admin_caption, reply_markup=admin_keyboard
     )
     await DBManager.update_log_message_id(inserted_row_id, log_message_node.id)
-    await message.reply_text("⏳ <b>Submission Forwarded!</b> Admin verification team is checking details.")
+    await message.reply_text("⏳ **Submission Forwarded!** Admin verification team is checking details.")
 
 @bot.on_callback_query(filters.regex(r"^(appv|rejc)_[a-f0-9]{16}$"))
 async def execution_routing_control_switches(client: Client, callback: CallbackQuery):
@@ -620,9 +616,9 @@ async def main():
 
     logging.info("🔥 Hardened Enterprise Production Single Bot Framework Online.")
     await bot.start()
-    # Fix 5: Pythonic Idiomatic shutdown maps via idle layer bindings
-    await idle()
-    await bot.stop()
+    
+    # Clean and native asyncio thread blocker setup
+    await asyncio.Event().wait()
 
 if __name__ == "__main__":
     loop.run_until_complete(main())
