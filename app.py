@@ -48,7 +48,8 @@ import qrcode
 # ==========================================
 API_ID = int(os.environ.get("API_ID", 34042874))
 API_HASH = os.environ.get("API_HASH", "494b9f740bc2f8f0e1a17c1c9f27ed9c")
-BOT_TOKEN = os.environ.get("BOT_TOKEN", "8492099684:AAH2lszBjqcZj5bm=ruvzWKNi32FOUnuWc")
+# ✅ FIX: Fixed the token typo string here
+BOT_TOKEN = os.environ.get("BOT_TOKEN", "8492099684:AAH2lszBjqcZj5bmr_ouvzWKNi32FOUnuWc")
 ADMIN_ID = int(os.environ.get("ADMIN_ID", 2066626554))
 TARGET_CHANNEL_ID = int(os.environ.get("TARGET_CHANNEL_ID", -1001522411163))
 LOG_CHANNEL_ID = int(os.environ.get("LOG_CHANNEL_ID", -1001639319995))
@@ -72,16 +73,12 @@ bot = Client(
     parse_mode=enums.ParseMode.MARKDOWN
 )
 
-# ==========================================
-# 🗄️ ASYNCHRONOUS MONGODB CLOUD DATABASE PIPELINE
-# ==========================================
 mongo_client = AsyncIOMotorClient(MONGO_URI)
 db = mongo_client["premium_payment_bot"]
 
 users_col = db["users"]
 payments_col = db["payments"]
 states_col = db["states"]
-
 class DBManager:
     @staticmethod
     async def check_user_exists(user_id):
@@ -186,9 +183,7 @@ class DBManager:
     async def clear_user_state(user_id):
         await states_col.delete_one({"user_id": user_id})
 
-# ==========================================
-# 🎰 LOCAL DYNAMIC QR COMPILER MECHANISM
-# ==========================================
+
 def get_local_upi_qr(amount: int) -> BytesIO:
     payload = f"upi://pay?pa={UPI_ID}&pn={urllib.parse.quote(MERCHANT_NAME)}&am={amount}&cu=INR"
     qr = qrcode.QRCode(version=1, box_size=10, border=4)
@@ -200,9 +195,6 @@ def get_local_upi_qr(amount: int) -> BytesIO:
     bio.name = "payment_qr.png"
     bio.seek(0)
     return bio
-    # ==========================================
-# 🤖 MIDDLEWARE AND ACTION SECURITY ROUTERS
-# ==========================================
 async def check_banned_middleware(message: Message):
     if await DBManager.is_user_banned(message.from_user.id):
         await message.reply_text("🚫 **Access Denied:** Your profile has been blacklisted.")
@@ -249,7 +241,6 @@ async def plan_selection_handler(client: Client, callback: CallbackQuery):
     try:
         qr_stream = get_local_upi_qr(selected_plan["price"])
         
-        # Fixed: Dynamic Click to Copy Callback Actions injected for mobile views
         keyboard = InlineKeyboardMarkup([
             [InlineKeyboardButton("📱 Mobile: Get Instant UPI Link", callback_data=f"paylink_{selected_plan['price']}")],
             [InlineKeyboardButton("✅ Proceed to Verify Payment", callback_data="confirm_paid")]
@@ -299,7 +290,6 @@ async def instruct_user_inputs(client: Client, callback: CallbackQuery):
     )
     await callback.answer()
 
-# 📊 FINANCIAL LEDGER STATS
 @bot.on_message(filters.command("status") & filters.private)
 async def status_dashboard_handler(client: Client, message: Message):
     if message.from_user.id != ADMIN_ID: return
@@ -312,7 +302,6 @@ async def status_dashboard_handler(client: Client, message: Message):
     )
     await message.reply_text(report)
 
-# 🔨 BAN USER COMMAND
 @bot.on_message(filters.command("ban") & filters.private)
 async def ban_user_handler(client: Client, message: Message):
     if message.from_user.id != ADMIN_ID: return
@@ -328,7 +317,6 @@ async def ban_user_handler(client: Client, message: Message):
         await bot.send_message(chat_id=target_id, text="🚫 Your account has been blacklisted by the Administrator.")
     except Exception as e: logging.exception(e)
 
-# 🔓 UNBAN USER COMMAND
 @bot.on_message(filters.command("unban") & filters.private)
 async def unban_user_handler(client: Client, message: Message):
     if message.from_user.id != ADMIN_ID: return
@@ -342,7 +330,6 @@ async def unban_user_handler(client: Client, message: Message):
     try: await bot.send_message(chat_id=target_id, text=f"🎉 Your account has been unbanned!")
     except Exception as e: logging.exception(e)
 
-# 📢 CONCURRENT PARALLEL BROADCAST MECHANISM WITH FLOODWAIT EXCEPTION RECOVERY
 async def send_single_broadcast(broadcast_msg: Message, user_id: int):
     try:
         await broadcast_msg.copy(chat_id=user_id)
@@ -393,7 +380,6 @@ async def broadcast_handler(client: Client, message: Message):
         text=f"📢 **Broadcast Matrix Report:**\n\n✅ Success: `{success_count}`\n🚫 Blocked/Removed: `{blocked_count}`\n⚠️ Failed: `{failed_count}`"
     )
 
-# 📥 LIVEGRAM REPLY ROUTER
 @bot.on_message(filters.chat(LOG_CHANNEL_ID) & filters.reply)
 async def livegram_reply_routing_handler(client: Client, message: Message):
     if message.text and message.text.startswith("/"): return
@@ -407,7 +393,6 @@ async def livegram_reply_routing_handler(client: Client, message: Message):
         logging.exception(e)
         await message.reply_text(f"❌ **Delivery Exception Failure:** `{e}`")
 
-# 📥 CORE DATA INTAKE PIPELINE
 @bot.on_message((filters.text | filters.photo) & filters.private & ~filters.command(["start", "help", "broadcast", "status", "ban", "unban"]))
 async def forward_to_admin_manual_check(client: Client, message: Message):
     if await check_banned_middleware(message): return
@@ -469,7 +454,6 @@ async def forward_to_admin_manual_check(client: Client, message: Message):
     await DBManager.update_log_message_id(inserted_row_id, log_message_node.id)
     await message.reply_text("⏳ **Submission Forwarded!** Admin verification team is checking details.")
 
-# 🕹️ ACTIONS ROUTING CONTROL SWITCHES
 @bot.on_callback_query(filters.regex(r"^(appv|rejc)_[a-f0-9]{16}$"))
 async def execution_routing_control_switches(client: Client, callback: CallbackQuery):
     if callback.from_user.id != ADMIN_ID:
@@ -523,12 +507,8 @@ async def execution_routing_control_switches(client: Client, callback: CallbackQ
             
     await callback.answer()
 
-# ==========================================
-# 🚀 CORE PLATFORM STARTUP BOOTSTRAPPER
-# ==========================================
 async def main():
     logging.info("⚙️ Bootstrapping core framework verification components...")
-    
     try:
         await mongo_client.admin.command("ping")
         logging.info("📶 MongoDB Atlas Cloud Infrastructure Connection Verified Successfully!")
@@ -551,4 +531,3 @@ async def main():
 
 if __name__ == "__main__":
     loop.run_until_complete(main())
-
