@@ -199,6 +199,9 @@ def get_local_upi_qr(amount: int) -> BytesIO:
     bio.name = "payment_qr.png"
     bio.seek(0)
     return bio
+# ==========================================
+# 🤖 MIDDLEWARE AND ACTION SECURITY ROUTERS
+# ==========================================
 async def check_banned_middleware(message: Message):
     if await DBManager.is_user_banned(message.from_user.id):
         await message.reply_text("<b>🚫 Access Denied:</b> Your profile has been blacklisted.")
@@ -238,7 +241,6 @@ async def plan_selection_handler(client: Client, callback: CallbackQuery):
     plan_key = callback.data.split("_")[1]
     selected_plan = PLANS[plan_key]
     
-    # Default billing method tracking set to FIAT (UPI) initially
     await DBManager.set_user_state(callback.from_user.id, {
         "status": "INITIATED", "plan": plan_key, "price": selected_plan["price_inr"], "method": "FIAT", "utr": None, "photo": None
     })
@@ -246,7 +248,6 @@ async def plan_selection_handler(client: Client, callback: CallbackQuery):
     try:
         qr_stream = get_local_upi_qr(selected_plan["price_inr"])
         
-        # ✅ FIX: Premium styled quote design blocks and clean interfaces (No loose stars or lines)
         keyboard = InlineKeyboardMarkup([
             [InlineKeyboardButton("🪙 Pay in USDT (Crypto)", callback_data=f"cryptolink_{plan_key}")],
             [InlineKeyboardButton("✅ Proceed to Verify Payment", callback_data="confirm_paid")]
@@ -274,16 +275,14 @@ async def crypto_link_alert_handler(client: Client, callback: CallbackQuery):
     plan_key = callback.data.split("_")[1]
     selected_plan = PLANS[plan_key]
     
-    # Switch tracking channel method validation onto CRYPTO assets
     await DBManager.set_user_state(callback.from_user.id, {"method": "CRYPTO"})
     
-    # ✅ FIX: Implemented ultimate luxury premium text formatting block styles
     crypto_text = (
         f"<b>🪙 USDT Secure Invoicing Layer Assets</b>\n"
         f"━━━━━━━━━━━━━━━━━━━━\n"
         f"📦 <b>Plan:</b> <code>{selected_plan['name']}</code>\n"
         f"💵 <b>Amount Due:</b> <code>${selected_plan['price_usd']:.2f} USDT</code>\n\n"
-        f"<blockquote><b>Tap any wallet address block down below to copy instantly:</b></blockquote>\n\n"
+        f"<b>Tap any wallet address block down below to copy instantly:</b>\n\n"
         f"🌐 <b>TRC20 Network Address:</b>\n<code>{USDT_TRC20}</code>\n\n"
         f"⚡ <b>BEP20 Network Address:</b>\n<code>{USDT_BEP20}</code>\n\n"
         f"💜 <b>Polygon POS Network Address:</b>\n<code>{USDT_POLYGON}</code>\n\n"
@@ -306,7 +305,6 @@ async def instruct_user_inputs(client: Client, callback: CallbackQuery):
         
     await DBManager.set_user_state(callback.from_user.id, {"status": "AWAITING_DATA"})
     
-    # ✅ FIX: Dynamic prompts matching payment method definitions precisely (Fixes TxID vs UTR text fields)
     if state.get("method") == "CRYPTO":
         prompt_text = (
             "<b>📝 Verification Requirements (USDT Crypto)</b>\n\n"
@@ -429,7 +427,8 @@ async def livegram_reply_routing_handler(client: Client, message: Message):
         logging.exception(e)
         await message.reply_text(f"❌ <b>Delivery Exception Failure:</b> <code>{e}</code>")
 
-@bot.on_message((filters.text | filters.photo) & filters.private & ~filters.command(["start", "help", "broadcast", "status", "ban", "unban"]))
+# ✅ FIXED INTAKE PIPELINE: Boundary safely locked at 70 characters max length
+@bot.on_message(filters.private & ~filters.command(["start", "help", "broadcast", "status", "ban", "unban"]))
 async def forward_to_admin_manual_check(client: Client, message: Message):
     if await check_banned_middleware(message): return
     user_id = message.from_user.id
@@ -442,8 +441,7 @@ async def forward_to_admin_manual_check(client: Client, message: Message):
 
     content = message.text if message.text else message.caption
     if content:
-        # Catching both 12 digit numbers (UTR) and 64 character strings (Crypto Hash) cleanly
-        utr_match = re.search(r"\b[A-Za-z0-9]{8,64}\b", content)
+        utr_match = re.search(r"\b[A-Za-z0-9]{8,70}\b", content)
         if utr_match:
             detected_utr = utr_match.group(0).upper()
             utr_status = await DBManager.check_utr(detected_utr)
@@ -482,7 +480,7 @@ async def forward_to_admin_manual_check(client: Client, message: Message):
     ])
 
     admin_caption = (
-        f"💰 <b>New Payment Verification Pending!</b>\n\n"
+        f"💰 **New Payment Verification Pending!**\n\n"
         f"👤 <b>User:</b> {message.from_user.first_name}\n"
         f"🆔 <b>ID:</b> <code>{user_id}</code>\n"
         f"📦 <b>Plan:</b> {plan_name}\n"
@@ -506,7 +504,7 @@ async def execution_routing_control_switches(client: Client, callback: CallbackQ
     
     payment_record = await DBManager.fetch_record_by_id(row_id_str)
     if not payment_record:
-        await callback.message.edit_caption(caption="❌ <b>Error:</b> Target database reference lost.")
+        await callback.message.edit_caption(caption="❌ **Error:** Target database reference lost.")
         await callback.answer()
         return
 
@@ -527,12 +525,12 @@ async def execution_routing_control_switches(client: Client, callback: CallbackQ
             
             await bot.send_message(
                 chat_id=target_user_id,
-                text=f"🎉 <b>Payment Verified!</b>\n\nClick link below to access channel:\n👉 {invite_link_payload.invite_link}\n\n⚠️ <i>Expires in 24 hours.</i>"
+                text=f"🎉 **Payment Verified!**\n\nClick link below to access channel:\n👉 {invite_link_payload.invite_link}\n\n⚠️ <i>Expires in 24 hours.</i>"
             )
             await callback.message.edit_caption(caption=f"{callback.message.caption}\n\n🟢 <b>STATUS: APPROVED TRACK LOG</b>")
         except Exception as e:
             logging.exception(e)
-            await callback.message.reply_text(f"❌ <b>Link Creation Engine Failure:</b> <code>{e}</code>")
+            await callback.message.reply_text(f"❌ **Link Creation Engine Failure:** <code>{e}</code>")
 
     elif action == "rejc":
         try:
@@ -541,9 +539,9 @@ async def execution_routing_control_switches(client: Client, callback: CallbackQ
             
             await bot.send_message(
                 chat_id=target_user_id,
-                text="❌ <b>Payment Rejected!</b> Please try again with valid screenshot parameters."
+                text="❌ **Payment Rejected!** Please try again with valid screenshot parameters."
             )
-            await callback.message.edit_caption(caption=f"{callback.message.caption}\n\n🔴 <b>STATUS: REJECTED TRACK LOG</b>")
+            await callback.message.edit_caption(caption=f"{callback.message.caption}\n\n🔴 **STATUS: REJECTED TRACK LOG</b>")
         except Exception as e: 
             logging.exception(e)
             
@@ -577,3 +575,5 @@ async def main():
 
 if __name__ == "__main__":
     loop.run_until_complete(main())
+    
+        
