@@ -68,7 +68,7 @@ PLANS = {
     "premium": {"name": "Ultimate Premium Plan", "price_inr": 299, "price_usd": 3.60}
 }
 
-# ✅ FIX: Shifted to strict HTML parser mode globally to unlock quote blocks safely
+# Strict HTML parser mode enabled globally
 bot = Client(
     "simple_pay_bot", 
     api_id=API_ID, 
@@ -199,9 +199,6 @@ def get_local_upi_qr(amount: int) -> BytesIO:
     bio.name = "payment_qr.png"
     bio.seek(0)
     return bio
-# ==========================================
-# 🤖 MIDDLEWARE AND ACTION SECURITY ROUTERS
-# ==========================================
 async def check_banned_middleware(message: Message):
     if await DBManager.is_user_banned(message.from_user.id):
         await message.reply_text("<b>🚫 Access Denied:</b> Your profile has been blacklisted.")
@@ -257,7 +254,7 @@ async def plan_selection_handler(client: Client, callback: CallbackQuery):
             f"<b>🤖 Payment Session Invoice Generated (Local QR)</b>\n"
             f"━━━━━━━━━━━━━━━━━━━━\n"
             f"📦 <b>Selected Plan:</b> <code>{selected_plan['name']}</code>\n"
-            f"💳 <b>Fixed Amount:</b> <code>Extra Rates: ₹{selected_plan['price_inr']} (${selected_plan['price_usd']:.2f})</code>\n"
+            f"💳 <b>Fixed Amount:</b> <code>₹{selected_plan['price_inr']} (${selected_plan['price_usd']:.2f})</code>\n"
             f"📌 <b>UPI ID Ref:</b> <code>{UPI_ID}</code>\n\n"
             f"<blockquote>Pay exact plan rate amount, capture screenshot confirmation data, then click button below to process verification logs.</blockquote>"
         )
@@ -282,7 +279,7 @@ async def crypto_link_alert_handler(client: Client, callback: CallbackQuery):
         f"━━━━━━━━━━━━━━━━━━━━\n"
         f"📦 <b>Plan:</b> <code>{selected_plan['name']}</code>\n"
         f"💵 <b>Amount Due:</b> <code>${selected_plan['price_usd']:.2f} USDT</code>\n\n"
-        f"<b>Tap any wallet address block down below to copy instantly:</b>\n\n"
+        f"<blockquote><b>Tap any wallet address block down below to copy instantly:</b></blockquote>\n\n"
         f"🌐 <b>TRC20 Network Address:</b>\n<code>{USDT_TRC20}</code>\n\n"
         f"⚡ <b>BEP20 Network Address:</b>\n<code>{USDT_BEP20}</code>\n\n"
         f"💜 <b>Polygon POS Network Address:</b>\n<code>{USDT_POLYGON}</code>\n\n"
@@ -321,18 +318,27 @@ async def instruct_user_inputs(client: Client, callback: CallbackQuery):
     await callback.message.reply_text(prompt_text)
     await callback.answer()
 
+# ✅ FIX: Hardened Admin Financial Statistics Engine inside absolute quote blocks with dynamically mapped USD assets
 @bot.on_message(filters.command("status") & filters.private)
 async def status_dashboard_handler(client: Client, message: Message):
     if message.from_user.id != ADMIN_ID: return
     stats = await DBManager.get_financial_analytics()
+    
+    # Static calculation context mapping onto USD estimates (1 USD = approx 83.3 INR)
+    month_usd = stats['month_revenue'] / 83.33
+    lifetime_usd = stats['lifetime_revenue'] / 83.33
+    
     report = (
-        "<b>📊 Premium Payments & Financial Ledger Status</b>\n━━━━━━━━━━━━━━━━━━━━\n\n"
+        f"<b>📊 Premium Payments & Financial Ledger Status</b>\n"
+        f"━━━━━━━━━━━━━━━━━━━━\n\n"
+        f"<blockquote>"
         f"👥 <b>Total Registered Users:</b> <code>{stats['total_users']}</code>\n"
         f"📈 <b>Total Paid Transactions:</b> <code>{stats['approved_count']}</code>\n"
         f"⏳ <b>Pending Verification Queue:</b> <code>{stats['pending_queue']}</code>\n\n"
-        f"💵 <b>This Month Gross Revenue:</b> <code>Extra Rates: ₹{stats['month_revenue']}</code>\n"
-        f"💰 <b>Lifetime Net Revenue Assets:</b> <code>Extra Rates: ₹{stats['lifetime_revenue']}</code>\n\n"
+        f"💵 <b>This Month Gross Revenue:</b> <code>₹{stats['month_revenue']} (${month_usd:.2f})</code>\n"
+        f"💰 <b>Lifetime Net Revenue Assets:</b> <code>₹{stats['lifetime_revenue']} (${lifetime_usd:.2f})</code>\n\n"
         f"🕒 <b>Server Sync Zone:</b> <code>{datetime.now(timezone.utc).strftime('%Y-%m-%d %H:%M UTC')}</code>"
+        f"</blockquote>"
     )
     await message.reply_text(report)
 
@@ -427,7 +433,6 @@ async def livegram_reply_routing_handler(client: Client, message: Message):
         logging.exception(e)
         await message.reply_text(f"❌ <b>Delivery Exception Failure:</b> <code>{e}</code>")
 
-# ✅ FIXED INTAKE PIPELINE: Boundary safely locked at 70 characters max length
 @bot.on_message(filters.private & ~filters.command(["start", "help", "broadcast", "status", "ban", "unban"]))
 async def forward_to_admin_manual_check(client: Client, message: Message):
     if await check_banned_middleware(message): return
@@ -480,7 +485,7 @@ async def forward_to_admin_manual_check(client: Client, message: Message):
     ])
 
     admin_caption = (
-        f"💰 **New Payment Verification Pending!**\n\n"
+        f"💰 <b>New Payment Verification Pending!</b>\n\n"
         f"👤 <b>User:</b> {message.from_user.first_name}\n"
         f"🆔 <b>ID:</b> <code>{user_id}</code>\n"
         f"📦 <b>Plan:</b> {plan_name}\n"
@@ -504,7 +509,7 @@ async def execution_routing_control_switches(client: Client, callback: CallbackQ
     
     payment_record = await DBManager.fetch_record_by_id(row_id_str)
     if not payment_record:
-        await callback.message.edit_caption(caption="❌ **Error:** Target database reference lost.")
+        await callback.message.edit_caption(caption="❌ <b>Error:</b> Target database reference lost.")
         await callback.answer()
         return
 
@@ -525,12 +530,12 @@ async def execution_routing_control_switches(client: Client, callback: CallbackQ
             
             await bot.send_message(
                 chat_id=target_user_id,
-                text=f"🎉 **Payment Verified!**\n\nClick link below to access channel:\n👉 {invite_link_payload.invite_link}\n\n⚠️ <i>Expires in 24 hours.</i>"
+                text=f"🎉 <b>Payment Verified!</b>\n\nClick link below to access channel:\n👉 {invite_link_payload.invite_link}\n\n⚠️ <i>Expires in 24 hours.</i>"
             )
             await callback.message.edit_caption(caption=f"{callback.message.caption}\n\n🟢 <b>STATUS: APPROVED TRACK LOG</b>")
         except Exception as e:
             logging.exception(e)
-            await callback.message.reply_text(f"❌ **Link Creation Engine Failure:** <code>{e}</code>")
+            await callback.message.reply_text(f"❌ <b>Link Creation Engine Failure:</b> <code>{e}</code>")
 
     elif action == "rejc":
         try:
@@ -539,9 +544,9 @@ async def execution_routing_control_switches(client: Client, callback: CallbackQ
             
             await bot.send_message(
                 chat_id=target_user_id,
-                text="❌ **Payment Rejected!** Please try again with valid screenshot parameters."
+                text="❌ <b>Payment Rejected!</b> Please try again with valid screenshot parameters."
             )
-            await callback.message.edit_caption(caption=f"{callback.message.caption}\n\n🔴 **STATUS: REJECTED TRACK LOG</b>")
+            await callback.message.edit_caption(caption=f"{callback.message.caption}\n\n🔴 <b>STATUS: REJECTED TRACK LOG</b>")
         except Exception as e: 
             logging.exception(e)
             
@@ -575,5 +580,3 @@ async def main():
 
 if __name__ == "__main__":
     loop.run_until_complete(main())
-    
-        
