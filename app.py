@@ -38,7 +38,7 @@ TARGET_CHANNEL_ID = -1001522411163
 LOG_CHANNEL_ID = -1001639319995     
 
 # 💳 Payment Gateway Configurations
-UPI_ID = "telugumovies8985-1@oksbi"
+UPI_ID = "safehands@ibl"
 MERCHANT_NAME = "Premium Access"
 
 # 🗓️ Subscription Plans Context Map
@@ -63,7 +63,7 @@ class Database:
 
     def setup(self):
         conn, cursor = self._get_conn()
-        # Payments Table (Added price tracking column)
+        # Payments Table
         cursor.execute('''
             CREATE TABLE IF NOT EXISTS payments (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -135,25 +135,20 @@ class Database:
         conn.commit()
         conn.close()
 
-    # FIX 5: Advanced Financial Analytics Engine Analytics
     def get_financial_analytics(self):
         conn, cursor = self._get_conn()
         
-        # User Stats
         cursor.execute("SELECT COUNT(*) FROM users")
         total_users = cursor.fetchone()[0]
         
-        # Total Revenue (Lifetime Approved Sales Summary)
         cursor.execute("SELECT TOTAL(amount) FROM payments WHERE status = 'APPROVED'")
         lifetime_revenue = cursor.fetchone()[0]
         
-        # This Month Revenue Metrics Pipeline
         now = datetime.now(timezone.utc)
         month_start = int(now.replace(day=1, hour=0, minute=0, second=0, microsecond=0).timestamp())
         cursor.execute("SELECT TOTAL(amount) FROM payments WHERE status = 'APPROVED' AND timestamp >= ?", (month_start,))
         month_revenue = cursor.fetchone()[0]
         
-        # Queue Metrics
         cursor.execute("SELECT COUNT(*) FROM payments WHERE status = 'PENDING'")
         pending_queue = cursor.fetchone()[0]
         
@@ -230,7 +225,6 @@ user_billing_state = {}
 # Helper Modules (Dynamic QR Code Generation Engine)
 # ==========================================
 def generate_upi_qr_url(amount: int) -> str:
-    # FIX 1: Generates live embedded standard strings for QR allocations dynamically
     payload = f"upi://pay?pa={UPI_ID}&pn={urllib.parse.quote(MERCHANT_NAME)}&am={amount}&cu=INR"
     return f"https://chart.googleapis.com/chart?chs=300x300&cht=qr&chl={urllib.parse.quote(payload)}"
 
@@ -263,7 +257,6 @@ async def start_handler(client: Client, message: Message):
         try: await bot.send_message(chat_id=LOG_CHANNEL_ID, text=new_user_log)
         except Exception: pass
             
-    # Multi-Plan Choice Buttons Layout
     keyboard = InlineKeyboardMarkup([
         [InlineKeyboardButton("🗓️ Standard Access (₹99)", callback_data="select_standard")],
         [InlineKeyboardButton("🚀 Premium Full Year (₹299)", callback_data="select_premium")],
@@ -274,14 +267,12 @@ async def start_handler(client: Client, message: Message):
         reply_markup=keyboard
     )
 
-# FIX 1: Dynamic Action Listeners handling specific item plans choices
 @bot.on_callback_query(filters.regex(r"^select_(standard|premium)$"))
 async def plan_selection_handler(client: Client, callback: CallbackQuery):
     if db.is_user_banned(callback.from_user.id): return
     plan_key = callback.data.split("_")[1]
     selected_plan = PLANS[plan_key]
     
-    # Track selection in user states
     user_billing_state[callback.from_user.id] = {
         "status": "INITIATED", "plan": plan_key, "price": selected_plan["price"], "utr": None, "photo": None
     }
@@ -289,8 +280,8 @@ async def plan_selection_handler(client: Client, callback: CallbackQuery):
     qr_image_url = generate_upi_qr_url(selected_plan["price"])
     intent_url = f"upi://pay?pa={UPI_ID}&pn={urllib.parse.quote(MERCHANT_NAME)}&am={selected_plan['price']}&cu=INR"
     
+    # ✅ FIX: Native Callback payload execution paths ONLY inside keyboards prevents raw schema url errors
     keyboard = InlineKeyboardMarkup([
-        [InlineKeyboardButton("📱 Open Payment App (Intent)", url=intent_url)],
         [InlineKeyboardButton("✅ Proceed to Verify Payment", callback_data="confirm_paid")]
     ])
     
@@ -300,7 +291,9 @@ async def plan_selection_handler(client: Client, callback: CallbackQuery):
         f"📦 **Selected Plan:** `{selected_plan['name']}`\n"
         f"💳 **Fixed Amount:** `₹{selected_plan['price']}`\n"
         f"📌 **UPI ID Ref:** `{UPI_ID}`\n\n"
-        f"👉 Scan the QR code image above using PhonePe, GPay, or Paytm, or click the link button down below to checkout instantly!"
+        f"📱 **Mobile Users:** [👉 Click Here to Pay Instantly]({intent_url})\n\n"
+        f"📸 **Desktop Users:** Scan the QR code image above using PhonePe, GPay, or Paytm.\n\n"
+        f"💸 _Pay standard rates, take a screenshot, and click the button below to verify._"
     )
     
     await callback.message.reply_photo(
@@ -326,7 +319,7 @@ async def instruct_user_inputs(client: Client, callback: CallbackQuery):
     )
     await callback.answer()
 
-# FIX 5: Integrated Advanced Financial Analytics Ledger Dashboard Reports Switch
+# 📊 FINANCIAL DASHBOARD COMMAND
 @bot.on_message(filters.command("status") & filters.user(ADMIN_ID) & filters.private)
 async def status_dashboard_handler(client: Client, message: Message):
     stats = db.get_financial_analytics()
@@ -404,7 +397,7 @@ async def livegram_reply_routing_handler(client: Client, message: Message):
         await message.copy(chat_id=target_user_id)
         await message.reply_text(f"🚀 **Livegram Reply Dispatched Successfully to User:** `{target_user_id}`")
     except Exception as e:
-        await message.reply_text(f"❌ **Delivery Exception:** `{e}`")
+        await message.reply_text(f"❌ **Delivery Failed:** `{e}`")
 
 @bot.on_message((filters.text | filters.photo) & filters.private & ~filters.command(["start", "help", "broadcast", "status", "ban", "unban"]))
 async def forward_to_admin_manual_check(client: Client, message: Message):
@@ -440,7 +433,6 @@ async def forward_to_admin_manual_check(client: Client, message: Message):
             await message.reply_text("⏳ UTR captured! Please dispatch your validation Image attachment capture right after.")
         return
 
-    # Injected dynamic amount into tracking parameters
     inserted_row_id = db.add_payment_intent(state["utr"], user_id, state["price"])
     if not inserted_row_id:
         await message.reply_text("🚫 **Conflict Alert:** Transaction verification pipeline drops identical entries.")
@@ -449,8 +441,6 @@ async def forward_to_admin_manual_check(client: Client, message: Message):
     plan_name = PLANS[state["plan"]]["name"]
     amount_paid = state["price"]
     user_billing_state.pop(user_id, None)
-    
-    username_ref = f"@{message.from_user.username}" if message.from_user.username else "No Username"
     
     admin_keyboard = InlineKeyboardMarkup([
         [InlineKeyboardButton("✅ Give Access", callback_data=f"appv_{inserted_row_id}")],
