@@ -48,7 +48,7 @@ import qrcode
 # ==========================================
 API_ID = int(os.environ.get("API_ID", 34042874))
 API_HASH = os.environ.get("API_HASH", "494b9f740bc2f8f0e1a17c1c9f27ed9c")
-BOT_TOKEN = os.environ.get("BOT_TOKEN", "8492099684:AAH2lszBjqcZj5bmr_ouvzWKNi32FOUnuWc")
+BOT_TOKEN = os.environ.get("BOT_TOKEN", "8492099684:AAH2lszBjqcZj5bm=ruvzWKNi32FOUnuWc")
 ADMIN_ID = int(os.environ.get("ADMIN_ID", 2066626554))
 TARGET_CHANNEL_ID = int(os.environ.get("TARGET_CHANNEL_ID", -1001522411163))
 LOG_CHANNEL_ID = int(os.environ.get("LOG_CHANNEL_ID", -1001639319995))
@@ -172,7 +172,6 @@ class DBManager:
 
     @staticmethod
     async def remove_record_by_id(row_id):
-        # Restored function for explicit deletion constraints if invoked (Fix 2)
         await payments_col.delete_one({"id": row_id})
 
     @staticmethod
@@ -201,8 +200,7 @@ def get_local_upi_qr(amount: int) -> BytesIO:
     bio.name = "payment_qr.png"
     bio.seek(0)
     return bio
-
-# ==========================================
+    # ==========================================
 # 🤖 MIDDLEWARE AND ACTION SECURITY ROUTERS
 # ==========================================
 async def check_banned_middleware(message: Message):
@@ -250,15 +248,18 @@ async def plan_selection_handler(client: Client, callback: CallbackQuery):
     
     try:
         qr_stream = get_local_upi_qr(selected_plan["price"])
-        intent_url = f"upi://pay?pa={UPI_ID}&pn={urllib.parse.quote(MERCHANT_NAME)}&am={selected_plan['price']}&cu=INR"
         
-        keyboard = InlineKeyboardMarkup([[InlineKeyboardButton("✅ Proceed to Verify Payment", callback_data="confirm_paid")]])
+        # Fixed: Dynamic Click to Copy Callback Actions injected for mobile views
+        keyboard = InlineKeyboardMarkup([
+            [InlineKeyboardButton("📱 Mobile: Get Instant UPI Link", callback_data=f"paylink_{selected_plan['price']}")],
+            [InlineKeyboardButton("✅ Proceed to Verify Payment", callback_data="confirm_paid")]
+        ])
         
         caption_text = (
             f"🤖 **Payment Session Invoice Generated (Local QR)**\n━━━━━━━━━━━━━━━━━━━━\n"
             f"📦 **Selected Plan:** `{selected_plan['name']}`\n💳 **Fixed Amount:** `₹{selected_plan['price']}`\n📌 **UPI ID Ref:** `{UPI_ID}`\n\n"
-            f"📱 **Mobile Users:** [👉 Click Here to Pay Instantly]({intent_url})\n\n"
-            f"📸 **Desktop Users:** Scan the QR code image above.\n\n"
+            f"📱 **Mobile Users:** కింద ఉన్న 'Mobile: Get Instant UPI Link' బటన్ క్లిక్ చేయండి.\n\n"
+            f"📸 **Desktop Users:** పైనున్న QR Code ని స్కాన్ చేయండి.\n\n"
             f"💸 _Pay exact rate amount, capture screenshot confirmation, and click button below._"
         )
         
@@ -269,6 +270,19 @@ async def plan_selection_handler(client: Client, callback: CallbackQuery):
         await callback.message.reply_text("❌ **Invoice Engine Failure.** Please try again or contact support.")
     finally:
         await callback.answer()
+
+@bot.on_callback_query(filters.regex(r"^paylink_\d+$"))
+async def upi_link_alert_handler(client: Client, callback: CallbackQuery):
+    amount = callback.data.split("_")[1]
+    intent_url = f"upi://pay?pa={UPI_ID}&pn={urllib.parse.quote(MERCHANT_NAME)}&am={amount}&cu=INR"
+    
+    alert_text = (
+        f"👇 **కింద ఉన్న లింక్ ని ఒక్కసారి టచ్ చేసి కాపీ చేసుకోండి:**\n\n"
+        f"`{intent_url}`\n\n"
+        f"లింక్ ని కాపీ చేసి మీ PhonePe/GPay లో 'Pay to UPI ID' సెక్షన్ లో పేస్ట్ చేయండి!"
+    )
+    await callback.message.reply_text(alert_text, disable_web_page_preview=True)
+    await callback.answer("🚀 UPI Link Dispatched Below!")
 
 @bot.on_callback_query(filters.regex("^confirm_paid$"))
 async def instruct_user_inputs(client: Client, callback: CallbackQuery):
@@ -328,7 +342,7 @@ async def unban_user_handler(client: Client, message: Message):
     try: await bot.send_message(chat_id=target_id, text=f"🎉 Your account has been unbanned!")
     except Exception as e: logging.exception(e)
 
-# 📢 CONCURRENT PARALLEL BROADCAST MECHANISM WITH FLOODWAIT EXCEPTION RECOVERY (Fix 9)
+# 📢 CONCURRENT PARALLEL BROADCAST MECHANISM WITH FLOODWAIT EXCEPTION RECOVERY
 async def send_single_broadcast(broadcast_msg: Message, user_id: int):
     try:
         await broadcast_msg.copy(chat_id=user_id)
@@ -357,7 +371,7 @@ async def broadcast_handler(client: Client, message: Message):
     status_update_msg = await message.reply_text(f"⏳ **Starting Parallel Broadcast Blast...** Target: `{len(all_users)}` users.")
     
     success_count, blocked_count, failed_count = 0, 0, 0
-    batch_size = 30  # Optimized threshold to limit extreme floodwait blocks
+    batch_size = 30
     
     for i in range(0, len(all_users), batch_size):
         batch = all_users[i:i + batch_size]
@@ -455,7 +469,7 @@ async def forward_to_admin_manual_check(client: Client, message: Message):
     await DBManager.update_log_message_id(inserted_row_id, log_message_node.id)
     await message.reply_text("⏳ **Submission Forwarded!** Admin verification team is checking details.")
 
-# 🕹️ ACTIONS ROUTING CONTROL SWITCHES - fully restored comprehensive logic blocks (Fix 1, 5, 6)
+# 🕹️ ACTIONS ROUTING CONTROL SWITCHES
 @bot.on_callback_query(filters.regex(r"^(appv|rejc)_[a-f0-9]{16}$"))
 async def execution_routing_control_switches(client: Client, callback: CallbackQuery):
     if callback.from_user.id != ADMIN_ID:
@@ -466,12 +480,12 @@ async def execution_routing_control_switches(client: Client, callback: CallbackQ
     
     payment_record = await DBManager.fetch_record_by_id(row_id_str)
     if not payment_record:
-        await callback.message.edit_caption(caption="❌ **Error:** Target database token tracing context completely lost.")
+        await callback.message.edit_caption(caption="❌ **Error:** Target database reference lost.")
         await callback.answer()
         return
 
     if payment_record["status"] in ["APPROVED", "REJECTED"]:
-        await callback.answer("⚠️ Action Blocked: This transaction intent has already been completely handled.", show_alert=True)
+        await callback.answer("⚠️ Action Blocked: Already completely handled.", show_alert=True)
         return
 
     target_user_id = payment_record["user_id"]
@@ -479,7 +493,6 @@ async def execution_routing_control_switches(client: Client, callback: CallbackQ
     if action == "appv":
         try:
             expire_datetime_obj = datetime.now(timezone.utc) + timedelta(days=1)
-            # Link generation routine logic completely integrated (Fix 5)
             invite_link_payload = await bot.create_chat_invite_link(
                 chat_id=TARGET_CHANNEL_ID, member_limit=1, expire_date=expire_datetime_obj
             )
@@ -497,7 +510,6 @@ async def execution_routing_control_switches(client: Client, callback: CallbackQ
 
     elif action == "rejc":
         try:
-            # Preservation audit trail log strategy applied without dropping rows (Fix 6)
             await DBManager.update_status_by_id(row_id_str, "REJECTED")
             await DBManager.clear_user_state(target_user_id)
             
@@ -512,7 +524,7 @@ async def execution_routing_control_switches(client: Client, callback: CallbackQ
     await callback.answer()
 
 # ==========================================
-# 🚀 CORE PLATFORM STARTUP BOOTSTRAPPER (Fix 10)
+# 🚀 CORE PLATFORM STARTUP BOOTSTRAPPER
 # ==========================================
 async def main():
     logging.info("⚙️ Bootstrapping core framework verification components...")
@@ -524,7 +536,6 @@ async def main():
         logging.critical(f"🛑 MongoDB Connection Failed! Execution halted: {mongo_err}")
         return
 
-    # Dynamic Background Index Engine Compilation (Fix 3 & 8)
     try:
         await users_col.create_index("user_id", unique=True)
         await payments_col.create_index("utr", unique=True)
@@ -534,9 +545,10 @@ async def main():
     except Exception as idx_err:
         logging.warning(f"⚠️ Index compilation structural notice: {idx_err}")
 
-    logging.info("🔥 Hardened Enterprise Production Single Bot Framework Online with Async MongoDB Engines.")
+    logging.info("🔥 Hardened Enterprise Production Single Bot Framework Online.")
     await bot.start()
     await asyncio.Event().wait()
 
 if __name__ == "__main__":
     loop.run_until_complete(main())
+
