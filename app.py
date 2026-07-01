@@ -2,12 +2,22 @@ import asyncio
 import sys
 import types
 import time
-import sqlite3
 import re
+import os
+import logging
 import urllib.parse
-import urllib.request
+import uuid
 from io import BytesIO
 from datetime import datetime, timezone, timedelta
+
+# ==========================================
+# 📊 PRODUCTION LOGGING ENGINE SET UP
+# ==========================================
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s - %(levelname)s - %(message)s",
+    handlers=[logging.StreamHandler(sys.stdout)]
+)
 
 # ==========================================
 # 🛑 CORE PYTHON 3.14 EVENT LOOP & PYROGRAM SYNC HOTFIX
@@ -25,226 +35,179 @@ if "pyrogram.sync" not in sys.modules:
     mock_sync_module.compose = lambda: None
     sys.modules["pyrogram.sync"] = mock_sync_module
 
-from pyrogram import Client, filters
+from pyrogram import Client, filters, enums
 from pyrogram.types import InlineKeyboardMarkup, InlineKeyboardButton, Message, CallbackQuery
-from pyrogram.errors import UserIsBlocked, InputUserDeactivated
+from pyrogram.errors import UserIsBlocked, InputUserDeactivated, FloodWait
+
+# ASYNCHRONOUS MONGODB ENGINE INJECTIONS
+from motor.motor_asyncio import AsyncIOMotorClient
+import qrcode
 
 # ==========================================
-# ⚙️ SECURE CONFIGURATION CONFIG
+# ⚙️ SECURE ENVIRONMENT CONFIG VARS
 # ==========================================
-API_ID = 34042874                   
-API_HASH = "494b9f740bc2f8f0e1a17c1c9f27ed9c"          
-BOT_TOKEN = "8492099684:AAH2lszBjqcZj5bmr_ouvzWKNi32FOUnuWc"        
-ADMIN_ID = 2066626554               
-TARGET_CHANNEL_ID = -1001522411163  
-LOG_CHANNEL_ID = -1001639319995     
+API_ID = int(os.environ.get("API_ID", 34042874))
+API_HASH = os.environ.get("API_HASH", "494b9f740bc2f8f0e1a17c1c9f27ed9c")
+BOT_TOKEN = os.environ.get("BOT_TOKEN", "8492099684:AAH2lszBjqcZj5bmr_ouvzWKNi32FOUnuWc")
+ADMIN_ID = int(os.environ.get("ADMIN_ID", 2066626554))
+TARGET_CHANNEL_ID = int(os.environ.get("TARGET_CHANNEL_ID", -1001522411163))
+LOG_CHANNEL_ID = int(os.environ.get("LOG_CHANNEL_ID", -1001639319995))
 
-# 💳 Payment Gateway Configurations (UPDATED USER UPI)
+MONGO_URI = os.environ.get("MONGO_URI", "mongodb+srv://MarvelAndDc:MarvelAndDc@cluster0.z0uow.mongodb.net/?retryWrites=true&w=majority")
+
+# 💳 Payment Configs
 UPI_ID = "Telugumovies8985-1@oksbi"
 MERCHANT_NAME = "Premium Access"
 
-# 🗓️ Subscription Plans Context Map
 PLANS = {
-    "standard": {"name": "Basic Standard Plan", "price": 99, "days": 30},
-    "premium": {"name": "Ultimate Premium Plan", "price": 299, "days": 365}
+    "standard": {"name": "Basic Standard Plan", "price": 99},
+    "premium": {"name": "Ultimate Premium Plan", "price": 299}
 }
 
-bot = Client("simple_pay_bot", api_id=API_ID, api_hash=API_HASH, bot_token=BOT_TOKEN)
+bot = Client(
+    "simple_pay_bot", 
+    api_id=API_ID, 
+    api_hash=API_HASH, 
+    bot_token=BOT_TOKEN,
+    parse_mode=enums.ParseMode.MARKDOWN
+)
 
 # ==========================================
-# 🗄️ EXTENDED FINANCIAL DATABANK HANDLER
+# 🗄️ ASYNCHRONOUS MONGODB CLOUD DATABASE PIPELINE
 # ==========================================
-class Database:
-    def __init__(self):
-        self.db_path = "bot_data.db"
-        self.setup()
+mongo_client = AsyncIOMotorClient(MONGO_URI)
+db = mongo_client["premium_payment_bot"]
 
-    def _get_conn(self):
-        conn = sqlite3.connect(self.db_path, timeout=30.0)
-        return conn, conn.cursor()
+users_col = db["users"]
+payments_col = db["payments"]
+states_col = db["states"]
 
-    def setup(self):
-        conn, cursor = self._get_conn()
-        # Payments Table
-        cursor.execute('''
-            CREATE TABLE IF NOT EXISTS payments (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                utr TEXT UNIQUE,
-                user_id INTEGER,
-                amount INTEGER DEFAULT 0,
-                status TEXT DEFAULT 'PENDING',
-                timestamp INTEGER,
-                log_msg_id INTEGER
-            )
-        ''')
-        # Users Table
-        cursor.execute('''
-            CREATE TABLE IF NOT EXISTS users (
-                user_id INTEGER PRIMARY KEY,
-                username TEXT,
-                first_name TEXT,
-                join_date INTEGER,
-                is_banned INTEGER DEFAULT 0
-            )
-        ''')
-        conn.commit()
-        conn.close()
+class DBManager:
+    @staticmethod
+    async def check_user_exists(user_id):
+        user = await users_col.find_one({"user_id": user_id})
+        return True if user else False
 
-    def check_user_exists(self, user_id):
-        conn, cursor = self._get_conn()
-        cursor.execute("SELECT user_id FROM users WHERE user_id = ?", (user_id,))
-        res = cursor.fetchone()
-        conn.close()
-        return True if res else False
+    @staticmethod
+    async def is_user_banned(user_id):
+        user = await users_col.find_one({"user_id": user_id})
+        return True if user and user.get("is_banned") == 1 else False
 
-    def is_user_banned(self, user_id):
-        conn, cursor = self._get_conn()
-        cursor.execute("SELECT is_banned FROM users WHERE user_id = ?", (user_id,))
-        res = cursor.fetchone()
-        conn.close()
-        return True if res and res[0] == 1 else False
+    @staticmethod
+    async def add_user(user_id, username, first_name):
+        await users_col.update_one(
+            {"user_id": user_id},
+            {"$set": {"username": username, "first_name": first_name, "join_date": int(time.time()), "is_banned": 0}},
+            upsert=True
+        )
 
-    def add_user(self, user_id, username, first_name):
-        conn, cursor = self._get_conn()
-        try:
-            cursor.execute(
-                "INSERT OR REPLACE INTO users (user_id, username, first_name, join_date, is_banned) VALUES (?, ?, ?, ?, 0)",
-                (user_id, username, first_name, int(time.time()))
-            )
-            conn.commit()
-            return True
-        except sqlite3.Error:
-            return False
-        finally:
-            conn.close()
+    @staticmethod
+    async def set_ban_status(user_id, ban_status):
+        await users_col.update_one({"user_id": user_id}, {"$set": {"is_banned": ban_status}})
 
-    def set_ban_status(self, user_id, ban_status):
-        conn, cursor = self._get_conn()
-        cursor.execute("UPDATE users SET is_banned = ? WHERE user_id = ?", (ban_status, user_id))
-        conn.commit()
-        conn.close()
+    @staticmethod
+    async def fetch_all_users():
+        cursor = users_col.find({"is_banned": 0})
+        return [doc["user_id"] async for doc in cursor]
 
-    def fetch_all_users(self):
-        conn, cursor = self._get_conn()
-        cursor.execute("SELECT user_id FROM users WHERE is_banned = 0")
-        rows = cursor.fetchall()
-        conn.close()
-        return [row[0] for row in rows]
+    @staticmethod
+    async def remove_user(user_id):
+        await users_col.delete_one({"user_id": user_id})
 
-    def remove_user(self, user_id):
-        conn, cursor = self._get_conn()
-        cursor.execute("DELETE FROM users WHERE user_id = ?", (user_id,))
-        conn.commit()
-        conn.close()
-
-    def get_financial_analytics(self):
-        conn, cursor = self._get_conn()
+    @staticmethod
+    async def get_financial_analytics():
+        total_users = await users_col.count_documents({})
+        pending_queue = await payments_col.count_documents({"status": "PENDING"})
+        approved_count = await payments_col.count_documents({"status": "APPROVED"})
         
-        cursor.execute("SELECT COUNT(*) FROM users")
-        total_users = cursor.fetchone()[0]
-        
-        cursor.execute("SELECT TOTAL(amount) FROM payments WHERE status = 'APPROVED'")
-        lifetime_revenue = cursor.fetchone()[0]
+        lifetime_pipeline = [{"$match": {"status": "APPROVED"}}, {"$group": {"_id": None, "total": {"$sum": "$amount"}}}]
+        lifetime_res = await payments_col.aggregate(lifetime_pipeline).to_list(1)
+        lifetime_revenue = lifetime_res[0]["total"] if lifetime_res else 0
         
         now = datetime.now(timezone.utc)
         month_start = int(now.replace(day=1, hour=0, minute=0, second=0, microsecond=0).timestamp())
-        cursor.execute("SELECT TOTAL(amount) FROM payments WHERE status = 'APPROVED' AND timestamp >= ?", (month_start,))
-        month_revenue = cursor.fetchone()[0]
+        month_pipeline = [{"$match": {"status": "APPROVED", "timestamp": {"$gte": month_start}}}, {"$group": {"_id": None, "total": {"$sum": "$amount"}}}]
+        month_res = await payments_col.aggregate(month_pipeline).to_list(1)
+        month_revenue = month_res[0]["total"] if month_res else 0
         
-        cursor.execute("SELECT COUNT(*) FROM payments WHERE status = 'PENDING'")
-        pending_queue = cursor.fetchone()[0]
-        
-        cursor.execute("SELECT COUNT(*) FROM payments WHERE status = 'APPROVED'")
-        approved_count = cursor.fetchone()[0]
-
-        conn.close()
         return {
-            "total_users": total_users,
-            "lifetime_revenue": int(lifetime_revenue),
-            "month_revenue": int(month_revenue),
-            "pending_queue": pending_queue,
-            "approved_count": approved_count
+            "total_users": total_users, "lifetime_revenue": int(lifetime_revenue),
+            "month_revenue": int(month_revenue), "pending_queue": pending_queue, "approved_count": approved_count
         }
 
-    def check_utr(self, utr):
-        conn, cursor = self._get_conn()
-        cursor.execute("SELECT status FROM payments WHERE utr = ?", (utr,))
-        res = cursor.fetchone()
-        conn.close()
-        return res[0] if res else None
+    @staticmethod
+    async def check_utr(utr):
+        res = await payments_col.find_one({"utr": utr})
+        return res["status"] if res else None
 
-    def add_payment_intent(self, utr, user_id, amount):
-        conn, cursor = self._get_conn()
+    @staticmethod
+    async def add_payment_intent(utr, user_id, amount):
         try:
-            cursor.execute(
-                "INSERT INTO payments (utr, user_id, amount, timestamp) VALUES (?, ?, ?, ?)", 
-                (utr, user_id, amount, int(time.time()))
-            )
-            conn.commit()
-            last_id = cursor.lastrowid
-        except sqlite3.IntegrityError:
-            last_id = None
-        finally:
-            conn.close()
-        return last_id
+            row_id = uuid.uuid4().hex[:16]
+            await payments_col.insert_one({
+                "id": row_id, "utr": utr, "user_id": user_id, "amount": amount,
+                "status": "PENDING", "timestamp": int(time.time()), "log_msg_id": 0
+            })
+            return row_id
+        except Exception:
+            logging.exception("Failed to insert unique payment transaction mapping profile.")
+            return None
 
-    def update_log_message_id(self, row_id, log_msg_id):
-        conn, cursor = self._get_conn()
-        cursor.execute("UPDATE payments SET log_msg_id = ? WHERE id = ?", (log_msg_id, row_id))
-        conn.commit()
-        conn.close()
+    @staticmethod
+    async def update_log_message_id(row_id, log_msg_id):
+        await payments_col.update_one({"id": row_id}, {"$set": {"log_msg_id": log_msg_id}})
 
-    def fetch_record_by_id(self, row_id):
-        conn, cursor = self._get_conn()
-        cursor.execute("SELECT utr, user_id, amount, status FROM payments WHERE id = ?", (row_id,))
-        res = cursor.fetchone()
-        conn.close()
-        return {"utr": res[0], "user_id": res[1], "amount": res[2], "status": res[3]} if res else None
+    @staticmethod
+    async def fetch_record_by_id(row_id):
+        return await payments_col.find_one({"id": row_id})
 
-    def fetch_user_by_log_msg(self, log_msg_id):
-        conn, cursor = self._get_conn()
-        cursor.execute("SELECT user_id FROM payments WHERE log_msg_id = ?", (log_msg_id,))
-        res = cursor.fetchone()
-        conn.close()
-        return res[0] if res else None
+    @staticmethod
+    async def fetch_user_by_log_msg(log_msg_id):
+        res = await payments_col.find_one({"log_msg_id": log_msg_id})
+        return res["user_id"] if res else None
 
-    def update_status_by_id(self, row_id, status):
-        conn, cursor = self._get_conn()
-        cursor.execute("UPDATE payments SET status = ? WHERE id = ?", (status, row_id))
-        conn.commit()
-        conn.close()
+    @staticmethod
+    async def update_status_by_id(row_id, status):
+        await payments_col.update_one({"id": row_id}, {"$set": {"status": status}})
 
-    def remove_record_by_id(self, row_id):
-        conn, cursor = self._get_conn()
-        cursor.execute("DELETE FROM payments WHERE id = ?", (row_id,))
-        conn.commit()
-        conn.close()
+    @staticmethod
+    async def remove_record_by_id(row_id):
+        # Restored function for explicit deletion constraints if invoked (Fix 2)
+        await payments_col.delete_one({"id": row_id})
 
-db = Database()
-user_billing_state = {}
+    @staticmethod
+    async def get_user_state(user_id):
+        return await states_col.find_one({"user_id": user_id})
+
+    @staticmethod
+    async def set_user_state(user_id, state_dict):
+        await states_col.update_one({"user_id": user_id}, {"$set": state_dict}, upsert=True)
+
+    @staticmethod
+    async def clear_user_state(user_id):
+        await states_col.delete_one({"user_id": user_id})
 
 # ==========================================
-# Helper Modules (Stream-Based QR Engine)
+# 🎰 LOCAL DYNAMIC QR COMPILER MECHANISM
 # ==========================================
-def get_upi_qr_stream(amount: int) -> BytesIO:
+def get_local_upi_qr(amount: int) -> BytesIO:
     payload = f"upi://pay?pa={UPI_ID}&pn={urllib.parse.quote(MERCHANT_NAME)}&am={amount}&cu=INR"
-    url = f"https://chart.googleapis.com/chart?chs=300x300&cht=qr&chl={urllib.parse.quote(payload)}"
-    
-    req = urllib.request.Request(url, headers={'User-Agent': 'Mozilla/5.0'})
-    with urllib.request.urlopen(req) as response:
-        img_bytes = response.read()
-    
-    bio = BytesIO(img_bytes)
+    qr = qrcode.QRCode(version=1, box_size=10, border=4)
+    qr.add_data(payload)
+    qr.make(fit=True)
+    img = qr.make_image(fill_color="black", back_color="white")
+    bio = BytesIO()
+    img.save(bio, format="PNG")
     bio.name = "payment_qr.png"
+    bio.seek(0)
     return bio
 
 # ==========================================
-# 🤖 BOT INTERFACE LOGIC FLOWS
+# 🤖 MIDDLEWARE AND ACTION SECURITY ROUTERS
 # ==========================================
-
 async def check_banned_middleware(message: Message):
-    if db.is_user_banned(message.from_user.id):
-        await message.reply_text("🚫 **Access Denied:** Your profile has been blacklisted by the Administrator.")
+    if await DBManager.is_user_banned(message.from_user.id):
+        await message.reply_text("🚫 **Access Denied:** Your profile has been blacklisted.")
         return True
     return False
 
@@ -252,20 +215,18 @@ async def check_banned_middleware(message: Message):
 async def start_handler(client: Client, message: Message):
     if await check_banned_middleware(message): return
     user_id = message.from_user.id
-    user_billing_state.pop(user_id, None)
+    await DBManager.clear_user_state(user_id)
     
     username_ref = f"@{message.from_user.username}" if message.from_user.username else "No Username"
     
-    if not db.check_user_exists(user_id):
-        db.add_user(user_id, message.from_user.username, message.from_user.first_name)
+    if not await DBManager.check_user_exists(user_id):
+        await DBManager.add_user(user_id, message.from_user.username, message.from_user.first_name)
         new_user_log = (
-            f"🆕 **New User Started the Bot!**\n\n"
-            f"👤 **Name:** {message.from_user.first_name}\n"
-            f"🆔 **ID:** `{user_id}`\n"
-            f"🌐 **Handle:** {username_ref}"
+            f"🆕 **New User Started Bot!**\n\n👤 **Name:** {message.from_user.first_name}\n"
+            f"🆔 **ID:** `{user_id}`\n🌐 **Handle:** {username_ref}"
         )
         try: await bot.send_message(chat_id=LOG_CHANNEL_ID, text=new_user_log)
-        except Exception: pass
+        except Exception as e: logging.exception(e)
             
     keyboard = InlineKeyboardMarkup([
         [InlineKeyboardButton("🗓️ Standard Access (₹99)", callback_data="select_standard")],
@@ -273,190 +234,210 @@ async def start_handler(client: Client, message: Message):
         [InlineKeyboardButton("📞 Support Desk", url=f"tg://user?id={ADMIN_ID}")]
     ])
     await message.reply_text(
-        "👋 **Welcome to Premium Channels Gateway Portal**\n\n⚡ Select your preferred access subscription plan below to generate a secure transaction session:",
+        "👋 **Welcome to Premium Channels Gateway Portal**\n\n⚡ Select your subscription plan below to generate an instant payment token:",
         reply_markup=keyboard
     )
 
 @bot.on_callback_query(filters.regex(r"^select_(standard|premium)$"))
 async def plan_selection_handler(client: Client, callback: CallbackQuery):
-    if db.is_user_banned(callback.from_user.id): return
+    if await DBManager.is_user_banned(callback.from_user.id): return
     plan_key = callback.data.split("_")[1]
     selected_plan = PLANS[plan_key]
     
-    user_billing_state[callback.from_user.id] = {
+    await DBManager.set_user_state(callback.from_user.id, {
         "status": "INITIATED", "plan": plan_key, "price": selected_plan["price"], "utr": None, "photo": None
-    }
-    
-    proc_msg = await callback.message.reply_text("⏳ Generating secure payment invoice session...")
+    })
     
     try:
-        qr_stream = get_upi_qr_stream(selected_plan["price"])
+        qr_stream = get_local_upi_qr(selected_plan["price"])
         intent_url = f"upi://pay?pa={UPI_ID}&pn={urllib.parse.quote(MERCHANT_NAME)}&am={selected_plan['price']}&cu=INR"
         
-        keyboard = InlineKeyboardMarkup([
-            [InlineKeyboardButton("✅ Proceed to Verify Payment", callback_data="confirm_paid")]
-        ])
+        keyboard = InlineKeyboardMarkup([[InlineKeyboardButton("✅ Proceed to Verify Payment", callback_data="confirm_paid")]])
         
         caption_text = (
-            f"🤖 **Payment Session Invoice Generated**\n"
-            f"━━━━━━━━━━━━━━━━━━━━\n"
-            f"📦 **Selected Plan:** `{selected_plan['name']}`\n"
-            f"💳 **Fixed Amount:** `₹{selected_plan['price']}`\n"
-            f"📌 **UPI ID Ref:** `{UPI_ID}`\n\n"
+            f"🤖 **Payment Session Invoice Generated (Local QR)**\n━━━━━━━━━━━━━━━━━━━━\n"
+            f"📦 **Selected Plan:** `{selected_plan['name']}`\n💳 **Fixed Amount:** `₹{selected_plan['price']}`\n📌 **UPI ID Ref:** `{UPI_ID}`\n\n"
             f"📱 **Mobile Users:** [👉 Click Here to Pay Instantly]({intent_url})\n\n"
-            f"📸 **Desktop Users:** Scan the QR code image above using PhonePe, GPay, or Paytm.\n\n"
-            f"💸 _Pay standard rates, take a screenshot, and click the button below to verify._"
+            f"📸 **Desktop Users:** Scan the QR code image above.\n\n"
+            f"💸 _Pay exact rate amount, capture screenshot confirmation, and click button below._"
         )
         
-        await callback.message.reply_photo(
-            photo=qr_stream,
-            caption=caption_text,
-            reply_markup=keyboard
-        )
+        await callback.message.reply_photo(photo=qr_stream, caption=caption_text, reply_markup=keyboard)
         await callback.message.delete()
     except Exception as e:
-        await callback.message.reply_text(f"❌ **Invoice Engine Failure:** `{e}`. Please contact Support.")
+        logging.exception(e)
+        await callback.message.reply_text("❌ **Invoice Engine Failure.** Please try again or contact support.")
     finally:
-        await proc_msg.delete()
         await callback.answer()
 
 @bot.on_callback_query(filters.regex("^confirm_paid$"))
 async def instruct_user_inputs(client: Client, callback: CallbackQuery):
-    if db.is_user_banned(callback.from_user.id): return
-    state = user_billing_state.get(callback.from_user.id)
+    if await DBManager.is_user_banned(callback.from_user.id): return
+    state = await DBManager.get_user_state(callback.from_user.id)
     if not state:
-        await callback.message.reply_text("❌ Session expired. Please send `/start` to select a plan again.")
+        await callback.message.reply_text("❌ Session expired. Please send `/start` again.")
         await callback.answer()
         return
         
-    state["status"] = "AWAITING_DATA"
+    await DBManager.set_user_state(callback.from_user.id, {"status": "AWAITING_DATA"})
     await callback.message.reply_text(
         "📝 **Verification Requirements:**\n\n1️⃣ Send your **12-digit UTR / Reference Number** in text.\n2️⃣ Send the **Screenshot image** right after."
     )
     await callback.answer()
 
-# 📊 FINANCIAL DASHBOARD COMMAND
-@bot.on_message(filters.command("status") & filters.user(ADMIN_ID) & filters.private)
+# 📊 FINANCIAL LEDGER STATS
+@bot.on_message(filters.command("status") & filters.private)
 async def status_dashboard_handler(client: Client, message: Message):
-    stats = db.get_financial_analytics()
+    if message.from_user.id != ADMIN_ID: return
+    stats = await DBManager.get_financial_analytics()
     report = (
-        "📊 **Premium Payments & Financial Ledger Status**\n"
-        "━━━━━━━━━━━━━━━━━━━━\n\n"
-        f"👥 **Total Registered Users:** `{stats['total_users']}`\n"
-        f"📈 **Total Paid Transactions:** `{stats['approved_count']}`\n"
-        f"⏳ **Pending Verification Queue:** `{stats['pending_queue']}`\n\n"
-        f"💵 **This Month Gross Revenue:** `₹{stats['month_revenue']}`\n"
-        f"💰 **Lifetime Net Revenue Assets:** `₹{stats['lifetime_revenue']}`\n\n"
-        f"🕒 **Server Sync Zone:** `{datetime.now(timezone.utc).strftime('%Y-%m-%d %H:%M UTC')}`"
+        "📊 **Premium Payments & Financial Ledger Status**\n━━━━━━━━━━━━━━━━━━━━\n\n"
+        f"👥 **Total Registered Users:** `{stats['total_users']}`\n📈 **Total Paid Transactions:** `{stats['approved_count']}`\n"
+        f"⏳ **Pending Verification Queue:** `{stats['pending_queue']}`\n\n💵 **This Month Gross Revenue:** `₹{stats['month_revenue']}`\n"
+        f"💰 **Lifetime Net Revenue Assets:** `₹{stats['lifetime_revenue']}`\n\n🕒 **Server Sync Zone:** `{datetime.now(timezone.utc).strftime('%Y-%m-%d %H:%M UTC')}`"
     )
     await message.reply_text(report)
 
 # 🔨 BAN USER COMMAND
-@bot.on_message(filters.command("ban") & filters.user(ADMIN_ID) & filters.private)
+@bot.on_message(filters.command("ban") & filters.private)
 async def ban_user_handler(client: Client, message: Message):
+    if message.from_user.id != ADMIN_ID: return
     if len(message.command) < 2: return
     target_id_str = message.command[1]
     if not target_id_str.isdigit(): return
     target_id = int(target_id_str)
-    db.set_ban_status(target_id, 1)
-    await message.reply_text(f"✅ User `{target_id}` has been **Blacklisted**.")
+    
+    await DBManager.set_ban_status(target_id, 1)
+    await message.reply_text(f"✅ User `{target_id}` Blacklisted.")
     try:
-        await bot.send_message(chat_id=LOG_CHANNEL_ID, text=f"🔨 **Admin Ban Action:** User `{target_id}` banned.")
-        await bot.send_message(chat_id=target_id, text="🚫 Your account has been banned from using this bot.")
-    except Exception: pass
+        await bot.send_message(chat_id=LOG_CHANNEL_ID, text=f"🔨 **Admin Ban:** User `{target_id}` banned.")
+        await bot.send_message(chat_id=target_id, text="🚫 Your account has been blacklisted by the Administrator.")
+    except Exception as e: logging.exception(e)
 
 # 🔓 UNBAN USER COMMAND
-@bot.on_message(filters.command("unban") & filters.user(ADMIN_ID) & filters.private)
+@bot.on_message(filters.command("unban") & filters.private)
 async def unban_user_handler(client: Client, message: Message):
+    if message.from_user.id != ADMIN_ID: return
     if len(message.command) < 2: return
     target_id_str = message.command[1]
     if not target_id_str.isdigit(): return
     target_id = int(target_id_str)
-    db.set_ban_status(target_id, 0)
-    await message.reply_text(f"✅ User `{target_id}` has been **Whitelisted**.")
-    try:
-        await bot.send_message(chat_id=LOG_CHANNEL_ID, text=f"🔓 **Admin Unban Action:** User `{target_id}` unbanned.")
-        await bot.send_message(chat_id=target_id, text="🎉 Your account has been unbanned!")
-    except Exception: pass
+    
+    await DBManager.set_ban_status(target_id, 0)
+    await message.reply_text(f"✅ User `{target_id}` Whitelisted.")
+    try: await bot.send_message(chat_id=target_id, text=f"🎉 Your account has been unbanned!")
+    except Exception as e: logging.exception(e)
 
-# 📢 ADMIN BROADCAST LOGIC
-@bot.on_message(filters.command("broadcast") & filters.user(ADMIN_ID) & filters.private)
-async def broadcast_handler(client: Client, message: Message):
-    if not message.reply_to_message: return
-    broadcast_msg = message.reply_to_message
-    all_users = db.fetch_all_users()
-    status_update_msg = await message.reply_text(f"⏳ **Starting Broadcast Blast...** Target: `{len(all_users)}` users.")
-    success_count, blocked_count, failed_count = 0, 0, 0
-    for idx, user_id in enumerate(all_users):
+# 📢 CONCURRENT PARALLEL BROADCAST MECHANISM WITH FLOODWAIT EXCEPTION RECOVERY (Fix 9)
+async def send_single_broadcast(broadcast_msg: Message, user_id: int):
+    try:
+        await broadcast_msg.copy(chat_id=user_id)
+        return "SUCCESS"
+    except FloodWait as fw:
+        await asyncio.sleep(fw.value + 1)
         try:
             await broadcast_msg.copy(chat_id=user_id)
-            success_count += 1
-        except (UserIsBlocked, InputUserDeactivated):
-            blocked_count += 1
-            db.remove_user(user_id)
-        except Exception: failed_count += 1
-        if idx % 15 == 0:
-            try: await status_update_msg.edit_text(f"⏳ Processing: `{idx}/{len(all_users)}` finished...")
-            except Exception: pass
-        await asyncio.sleep(0.05)
-    await status_update_msg.edit_text("✅ Broadcast complete.")
-    await bot.send_message(chat_id=LOG_CHANNEL_ID, text=f"📢 **Broadcast Report Finished!**\n\n✅ Success: `{success_count}`\n🚫 Blocked: `{blocked_count}`")
+            return "SUCCESS"
+        except Exception:
+            return "FAILED"
+    except (UserIsBlocked, InputUserDeactivated):
+        await DBManager.remove_user(user_id)
+        return "BLOCKED"
+    except Exception as e:
+        logging.debug(f"Failed delivery to {user_id}: {e}")
+        return "FAILED"
 
-# 📥 LIVEGRAM REPLY ENGINE
+@bot.on_message(filters.command("broadcast") & filters.private)
+async def broadcast_handler(client: Client, message: Message):
+    if message.from_user.id != ADMIN_ID: return
+    if not message.reply_to_message: return
+    
+    broadcast_msg = message.reply_to_message
+    all_users = await DBManager.fetch_all_users()
+    status_update_msg = await message.reply_text(f"⏳ **Starting Parallel Broadcast Blast...** Target: `{len(all_users)}` users.")
+    
+    success_count, blocked_count, failed_count = 0, 0, 0
+    batch_size = 30  # Optimized threshold to limit extreme floodwait blocks
+    
+    for i in range(0, len(all_users), batch_size):
+        batch = all_users[i:i + batch_size]
+        tasks = [send_single_broadcast(broadcast_msg, user_id) for user_id in batch]
+        results = await asyncio.gather(*tasks)
+        
+        for res in results:
+            if res == "SUCCESS": success_count += 1
+            elif res == "BLOCKED": blocked_count += 1
+            elif res == "FAILED": failed_count += 1
+            
+        try: await status_update_msg.edit_text(f"⏳ Progress: `{min(i + batch_size, len(all_users))}/{len(all_users)}` processed...")
+        except Exception: pass
+        await asyncio.sleep(0.2)
+        
+    await status_update_msg.edit_text("✅ Parallel broadcast deployment execution complete.")
+    await bot.send_message(
+        chat_id=LOG_CHANNEL_ID, 
+        text=f"📢 **Broadcast Matrix Report:**\n\n✅ Success: `{success_count}`\n🚫 Blocked/Removed: `{blocked_count}`\n⚠️ Failed: `{failed_count}`"
+    )
+
+# 📥 LIVEGRAM REPLY ROUTER
 @bot.on_message(filters.chat(LOG_CHANNEL_ID) & filters.reply)
 async def livegram_reply_routing_handler(client: Client, message: Message):
     if message.text and message.text.startswith("/"): return
-    target_user_id = db.fetch_user_by_log_msg(message.reply_to_message_id)
+    target_user_id = await DBManager.fetch_user_by_log_msg(message.reply_to_message_id)
     if not target_user_id: return
 
     try:
         await message.copy(chat_id=target_user_id)
-        await message.reply_text(f"🚀 **Livegram Reply Dispatched Successfully to User:** `{target_user_id}`")
+        await message.reply_text(f"🚀 **Livegram Reply Dispatched to User:** `{target_user_id}`")
     except Exception as e:
-        await message.reply_text(f"❌ **Delivery Failed:** `{e}`")
+        logging.exception(e)
+        await message.reply_text(f"❌ **Delivery Exception Failure:** `{e}`")
 
+# 📥 CORE DATA INTAKE PIPELINE
 @bot.on_message((filters.text | filters.photo) & filters.private & ~filters.command(["start", "help", "broadcast", "status", "ban", "unban"]))
 async def forward_to_admin_manual_check(client: Client, message: Message):
     if await check_banned_middleware(message): return
     user_id = message.from_user.id
     if user_id == ADMIN_ID: return 
 
-    state = user_billing_state.get(user_id)
-    if not state or state["status"] not in ["AWAITING_DATA", "COLLECTING"]:
+    state = await DBManager.get_user_state(user_id)
+    if not state or state.get("status") not in ["AWAITING_DATA", "COLLECTING"]:
         await message.reply_text("👋 Hello! Please send `/start` and select a subscription plan.")
         return
 
     content = message.text if message.text else message.caption
     if content:
-        utr_match = re.search(r"\b[A-Za-z0-9]{8,22}\b", content)
+        utr_match = re.search(r"\b[0-9]{12}\b", content)
         if utr_match:
-            detected_utr = utr_match.group(0).upper()
-            utr_status = db.check_utr(detected_utr)
+            detected_utr = utr_match.group(0)
+            utr_status = await DBManager.check_utr(detected_utr)
             if utr_status in ["PENDING", "APPROVED"]:
-                await message.reply_text("🚫 **Security Alert:** This Transaction Ref/UTR has already been submitted.")
+                await message.reply_text("🚫 **Security Alert:** This UTR Number has already been submitted.")
                 return
             state["utr"] = detected_utr
+            await DBManager.set_user_state(user_id, {"utr": detected_utr})
 
     if message.photo:
-        if isinstance(message.photo, list): state["photo"] = message.photo[-1].file_id
-        elif hasattr(message.photo, "file_id"): state["photo"] = message.photo.file_id
+        photo_id = message.photo.file_id
+        state["photo"] = photo_id
+        await DBManager.set_user_state(user_id, {"photo": photo_id})
 
-    if not state["utr"] or not state["photo"]:
-        state["status"] = "COLLECTING"
-        if not state["utr"]:
-            await message.reply_text("⏳ Please provide your text message listing the Transaction ID / UTR Number accurately.")
+    if not state.get("utr") or not state.get("photo"):
+        await DBManager.set_user_state(user_id, {"status": "COLLECTING"})
+        if not state.get("utr"):
+            await message.reply_text("⏳ Please provide your 12-digit numeric Transaction ID / UTR Number accurately.")
         else:
-            await message.reply_text("⏳ UTR captured! Please dispatch your validation Image attachment capture right after.")
+            await message.reply_text("⏳ UTR captured! Please dispatch your validation Screenshot image right after.")
         return
 
-    inserted_row_id = db.add_payment_intent(state["utr"], user_id, state["price"])
+    inserted_row_id = await DBManager.add_payment_intent(state["utr"], user_id, state["price"])
     if not inserted_row_id:
-        await message.reply_text("🚫 **Conflict Alert:** Transaction verification pipeline drops identical entries.")
+        await message.reply_text("🚫 **Conflict Error:** Duplicate transaction token mismatch dropped.")
         return
 
     plan_name = PLANS[state["plan"]]["name"]
     amount_paid = state["price"]
-    user_billing_state.pop(user_id, None)
+    await DBManager.clear_user_state(user_id)
     
     admin_keyboard = InlineKeyboardMarkup([
         [InlineKeyboardButton("✅ Give Access", callback_data=f"appv_{inserted_row_id}")],
@@ -464,32 +445,33 @@ async def forward_to_admin_manual_check(client: Client, message: Message):
     ])
 
     admin_caption = (
-        f"💰 **New Payment Verification Pending!**\n\n"
-        f"👤 **User:** {message.from_user.first_name}\n"
-        f"🆔 **ID:** `{user_id}`\n"
-        f"📦 **Plan:** {plan_name}\n"
-        f"💵 **Value:** `₹{amount_paid}`\n"
-        f"🔢 **UTR Ref:** `{state['utr']}`"
+        f"💰 **New Payment Verification Pending!**\n\n👤 **User:** {message.from_user.first_name}\n"
+        f"🆔 **ID:** `{user_id}`\n📦 **Plan:** {plan_name}\n💵 **Value:** `₹{amount_paid}`\n🔢 **UTR Ref:** `{state['utr']}`"
     )
 
     log_message_node = await bot.send_photo(
-        chat_id=LOG_CHANNEL_ID,
-        photo=state["photo"],
-        caption=admin_caption,
-        reply_markup=admin_keyboard
+        chat_id=LOG_CHANNEL_ID, photo=state["photo"], caption=admin_caption, reply_markup=admin_keyboard
     )
-    db.update_log_message_id(inserted_row_id, log_message_node.id)
-    await message.reply_text("⏳ **Submission Forwarded!** Admin verification team is checking details in logs channel.")
+    await DBManager.update_log_message_id(inserted_row_id, log_message_node.id)
+    await message.reply_text("⏳ **Submission Forwarded!** Admin verification team is checking details.")
 
-@bot.on_callback_query(filters.regex(r"^(appv|rejc)_\d+$"))
+# 🕹️ ACTIONS ROUTING CONTROL SWITCHES - fully restored comprehensive logic blocks (Fix 1, 5, 6)
+@bot.on_callback_query(filters.regex(r"^(appv|rejc)_[a-f0-9]{16}$"))
 async def execution_routing_control_switches(client: Client, callback: CallbackQuery):
+    if callback.from_user.id != ADMIN_ID:
+        await callback.answer("🚫 Security Violation: Unauthorized Command Interface Dropped.", show_alert=True)
+        return
+        
     action, row_id_str = callback.data.split("_")
-    db_row_id = int(row_id_str)
     
-    payment_record = db.fetch_record_by_id(db_row_id)
+    payment_record = await DBManager.fetch_record_by_id(row_id_str)
     if not payment_record:
-        await callback.message.edit_caption(caption="❌ **Error:** Target database reference trace logs lost.")
+        await callback.message.edit_caption(caption="❌ **Error:** Target database token tracing context completely lost.")
         await callback.answer()
+        return
+
+    if payment_record["status"] in ["APPROVED", "REJECTED"]:
+        await callback.answer("⚠️ Action Blocked: This transaction intent has already been completely handled.", show_alert=True)
         return
 
     target_user_id = payment_record["user_id"]
@@ -497,34 +479,62 @@ async def execution_routing_control_switches(client: Client, callback: CallbackQ
     if action == "appv":
         try:
             expire_datetime_obj = datetime.now(timezone.utc) + timedelta(days=1)
+            # Link generation routine logic completely integrated (Fix 5)
             invite_link_payload = await bot.create_chat_invite_link(
-                chat_id=TARGET_CHANNEL_ID,
-                member_limit=1,
-                expire_date=expire_datetime_obj
+                chat_id=TARGET_CHANNEL_ID, member_limit=1, expire_date=expire_datetime_obj
             )
-            db.update_status_by_id(db_row_id, "APPROVED")
+            await DBManager.update_status_by_id(row_id_str, "APPROVED")
+            await DBManager.clear_user_state(target_user_id)
+            
             await bot.send_message(
                 chat_id=target_user_id,
                 text=f"🎉 **Payment Verified!**\n\nClick link below to access channel:\n👉 {invite_link_payload.invite_link}\n\n⚠️ _Expires in 24 hours._"
             )
             await callback.message.edit_caption(caption=f"{callback.message.caption}\n\n🟢 **STATUS:** APPROVED TRACK LOG")
-        except Exception as dynamic_failure_exception:
-            await callback.message.reply_text(f"❌ **Link Error:** `{dynamic_failure_exception}`")
+        except Exception as e:
+            logging.exception(e)
+            await callback.message.reply_text(f"❌ **Link Creation Engine Failure:** `{e}`")
 
     elif action == "rejc":
         try:
-            db.remove_record_by_id(db_row_id)
+            # Preservation audit trail log strategy applied without dropping rows (Fix 6)
+            await DBManager.update_status_by_id(row_id_str, "REJECTED")
+            await DBManager.clear_user_state(target_user_id)
+            
             await bot.send_message(
                 chat_id=target_user_id,
-                text="❌ **Payment Rejected!** Please try again with valid proof parameters logs."
+                text="❌ **Payment Rejected!** Please try again with valid screenshot parameters."
             )
             await callback.message.edit_caption(caption=f"{callback.message.caption}\n\n🔴 **STATUS:** REJECTED TRACK LOG")
         except Exception as e: 
-            print(f"Failed to reply: {e}")
+            logging.exception(e)
+            
     await callback.answer()
 
+# ==========================================
+# 🚀 CORE PLATFORM STARTUP BOOTSTRAPPER (Fix 10)
+# ==========================================
 async def main():
-    print("🔥 Secure Production Bot Online with Stream-Based QR Engine & Updated UPI.")
+    logging.info("⚙️ Bootstrapping core framework verification components...")
+    
+    try:
+        await mongo_client.admin.command("ping")
+        logging.info("📶 MongoDB Atlas Cloud Infrastructure Connection Verified Successfully!")
+    except Exception as mongo_err:
+        logging.critical(f"🛑 MongoDB Connection Failed! Execution halted: {mongo_err}")
+        return
+
+    # Dynamic Background Index Engine Compilation (Fix 3 & 8)
+    try:
+        await users_col.create_index("user_id", unique=True)
+        await payments_col.create_index("utr", unique=True)
+        await payments_col.create_index("id", unique=True)
+        await payments_col.create_index("log_msg_id")
+        logging.info("🛡️ Production DB Composite Indexes compiled flawlessly.")
+    except Exception as idx_err:
+        logging.warning(f"⚠️ Index compilation structural notice: {idx_err}")
+
+    logging.info("🔥 Hardened Enterprise Production Single Bot Framework Online with Async MongoDB Engines.")
     await bot.start()
     await asyncio.Event().wait()
 
