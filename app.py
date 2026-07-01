@@ -38,7 +38,7 @@ TARGET_CHANNEL_ID = -1001522411163
 LOG_CHANNEL_ID = -1001639319995     
 
 # 💳 Payment Gateway Configurations
-UPI_ID = "safehands@ibl"
+UPI_ID = "telugumovies8985-1@oksbi"
 MERCHANT_NAME = "Premium Access"
 
 # 🗓️ Subscription Plans Context Map
