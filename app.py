@@ -4,6 +4,7 @@ import types
 import time
 import sqlite3
 import re
+import urllib.parse
 from datetime import datetime, timezone, timedelta
 
 # ==========================================
@@ -27,21 +28,29 @@ from pyrogram.types import InlineKeyboardMarkup, InlineKeyboardButton, Message, 
 from pyrogram.errors import UserIsBlocked, InputUserDeactivated
 
 # ==========================================
-# ⚙️ SECURE CONFIGURATION CONFIG (UPDATED CHANNELS)
+# ⚙️ SECURE CONFIGURATION CONFIG
 # ==========================================
 API_ID = 34042874                   
 API_HASH = "494b9f740bc2f8f0e1a17c1c9f27ed9c"          
 BOT_TOKEN = "8492099684:AAH2lszBjqcZj5bmr_ouvzWKNi32FOUnuWc"        
 ADMIN_ID = 2066626554               
-
-# ✅ Fully Updated Space IDs
 TARGET_CHANNEL_ID = -1001522411163  
 LOG_CHANNEL_ID = -1001639319995     
+
+# 💳 Payment Gateway Configurations
+UPI_ID = "safehands@ibl"
+MERCHANT_NAME = "Premium Access"
+
+# 🗓️ Subscription Plans Context Map
+PLANS = {
+    "standard": {"name": "Basic Standard Plan", "price": 99, "days": 30},
+    "premium": {"name": "Ultimate Premium Plan", "price": 299, "days": 365}
+}
 
 bot = Client("simple_pay_bot", api_id=API_ID, api_hash=API_HASH, bot_token=BOT_TOKEN)
 
 # ==========================================
-# 🗄️ EXTENDED DATABANK HANDLER
+# 🗄️ EXTENDED FINANCIAL DATABANK HANDLER
 # ==========================================
 class Database:
     def __init__(self):
@@ -54,12 +63,13 @@ class Database:
 
     def setup(self):
         conn, cursor = self._get_conn()
-        # Payments Table (Row Auto-ID & Telegram Log Message ID configured distinctly)
+        # Payments Table (Added price tracking column)
         cursor.execute('''
             CREATE TABLE IF NOT EXISTS payments (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 utr TEXT UNIQUE,
                 user_id INTEGER,
+                amount INTEGER DEFAULT 0,
                 status TEXT DEFAULT 'PENDING',
                 timestamp INTEGER,
                 log_msg_id INTEGER
@@ -125,25 +135,38 @@ class Database:
         conn.commit()
         conn.close()
 
-    def get_global_stats(self):
+    # FIX 5: Advanced Financial Analytics Engine Analytics
+    def get_financial_analytics(self):
         conn, cursor = self._get_conn()
+        
+        # User Stats
         cursor.execute("SELECT COUNT(*) FROM users")
         total_users = cursor.fetchone()[0]
-        cursor.execute("SELECT COUNT(*) FROM users WHERE is_banned = 1")
-        banned_users = cursor.fetchone()[0]
-        cursor.execute("SELECT COUNT(*) FROM payments WHERE status = 'APPROVED'")
-        approved_payments = cursor.fetchone()[0]
-        cursor.execute("SELECT COUNT(*) FROM payments WHERE status = 'PENDING'")
-        pending_payments = cursor.fetchone()[0]
         
-        today_start = int(datetime.now(timezone.utc).replace(hour=0, minute=0, second=0, microsecond=0).timestamp())
-        cursor.execute("SELECT COUNT(*) FROM users WHERE join_date >= ?", (today_start,))
-        today_users = cursor.fetchone()[0]
+        # Total Revenue (Lifetime Approved Sales Summary)
+        cursor.execute("SELECT TOTAL(amount) FROM payments WHERE status = 'APPROVED'")
+        lifetime_revenue = cursor.fetchone()[0]
+        
+        # This Month Revenue Metrics Pipeline
+        now = datetime.now(timezone.utc)
+        month_start = int(now.replace(day=1, hour=0, minute=0, second=0, microsecond=0).timestamp())
+        cursor.execute("SELECT TOTAL(amount) FROM payments WHERE status = 'APPROVED' AND timestamp >= ?", (month_start,))
+        month_revenue = cursor.fetchone()[0]
+        
+        # Queue Metrics
+        cursor.execute("SELECT COUNT(*) FROM payments WHERE status = 'PENDING'")
+        pending_queue = cursor.fetchone()[0]
+        
+        cursor.execute("SELECT COUNT(*) FROM payments WHERE status = 'APPROVED'")
+        approved_count = cursor.fetchone()[0]
+
         conn.close()
         return {
-            "total_users": total_users, "banned_users": banned_users,
-            "approved_payments": approved_payments, "pending_payments": pending_payments,
-            "today_users": today_users
+            "total_users": total_users,
+            "lifetime_revenue": int(lifetime_revenue),
+            "month_revenue": int(month_revenue),
+            "pending_queue": pending_queue,
+            "approved_count": approved_count
         }
 
     def check_utr(self, utr):
@@ -153,10 +176,13 @@ class Database:
         conn.close()
         return res[0] if res else None
 
-    def add_payment_intent(self, utr, user_id):
+    def add_payment_intent(self, utr, user_id, amount):
         conn, cursor = self._get_conn()
         try:
-            cursor.execute("INSERT INTO payments (utr, user_id, timestamp) VALUES (?, ?, ?)", (utr, user_id, int(time.time())))
+            cursor.execute(
+                "INSERT INTO payments (utr, user_id, amount, timestamp) VALUES (?, ?, ?, ?)", 
+                (utr, user_id, amount, int(time.time()))
+            )
             conn.commit()
             last_id = cursor.lastrowid
         except sqlite3.IntegrityError:
@@ -173,10 +199,10 @@ class Database:
 
     def fetch_record_by_id(self, row_id):
         conn, cursor = self._get_conn()
-        cursor.execute("SELECT utr, user_id, status FROM payments WHERE id = ?", (row_id,))
+        cursor.execute("SELECT utr, user_id, amount, status FROM payments WHERE id = ?", (row_id,))
         res = cursor.fetchone()
         conn.close()
-        return {"utr": res[0], "user_id": res[1], "status": res[2]} if res else None
+        return {"utr": res[0], "user_id": res[1], "amount": res[2], "status": res[3]} if res else None
 
     def fetch_user_by_log_msg(self, log_msg_id):
         conn, cursor = self._get_conn()
@@ -199,6 +225,14 @@ class Database:
 
 db = Database()
 user_billing_state = {}
+
+# ==========================================
+# Helper Modules (Dynamic QR Code Generation Engine)
+# ==========================================
+def generate_upi_qr_url(amount: int) -> str:
+    # FIX 1: Generates live embedded standard strings for QR allocations dynamically
+    payload = f"upi://pay?pa={UPI_ID}&pn={urllib.parse.quote(MERCHANT_NAME)}&am={amount}&cu=INR"
+    return f"https://chart.googleapis.com/chart?chs=300x300&cht=qr&chl={urllib.parse.quote(payload)}"
 
 # ==========================================
 # 🤖 BOT INTERFACE LOGIC FLOWS
@@ -229,69 +263,117 @@ async def start_handler(client: Client, message: Message):
         try: await bot.send_message(chat_id=LOG_CHANNEL_ID, text=new_user_log)
         except Exception: pass
             
+    # Multi-Plan Choice Buttons Layout
     keyboard = InlineKeyboardMarkup([
-        [InlineKeyboardButton("💳 Pay Now", callback_data="show_qr")],
-        [InlineKeyboardButton("📞 Support", url=f"tg://user?id={ADMIN_ID}")]
+        [InlineKeyboardButton("🗓️ Standard Access (₹99)", callback_data="select_standard")],
+        [InlineKeyboardButton("🚀 Premium Full Year (₹299)", callback_data="select_premium")],
+        [InlineKeyboardButton("📞 Support Desk", url=f"tg://user?id={ADMIN_ID}")]
     ])
     await message.reply_text(
-        "👋 **Welcome Premium Channel Access**\n\nPrice: **Extra Special Rate ₹99**\n👇 Click below to pay:",
+        "👋 **Welcome to Premium Channels Gateway Portal**\n\n⚡ Select your preferred access subscription plan below to generate a secure transaction session:",
         reply_markup=keyboard
     )
 
-# 📊 STATUS COMMAND
+# FIX 1: Dynamic Action Listeners handling specific item plans choices
+@bot.on_callback_query(filters.regex(r"^select_(standard|premium)$"))
+async def plan_selection_handler(client: Client, callback: CallbackQuery):
+    if db.is_user_banned(callback.from_user.id): return
+    plan_key = callback.data.split("_")[1]
+    selected_plan = PLANS[plan_key]
+    
+    # Track selection in user states
+    user_billing_state[callback.from_user.id] = {
+        "status": "INITIATED", "plan": plan_key, "price": selected_plan["price"], "utr": None, "photo": None
+    }
+    
+    qr_image_url = generate_upi_qr_url(selected_plan["price"])
+    intent_url = f"upi://pay?pa={UPI_ID}&pn={urllib.parse.quote(MERCHANT_NAME)}&am={selected_plan['price']}&cu=INR"
+    
+    keyboard = InlineKeyboardMarkup([
+        [InlineKeyboardButton("📱 Open Payment App (Intent)", url=intent_url)],
+        [InlineKeyboardButton("✅ Proceed to Verify Payment", callback_data="confirm_paid")]
+    ])
+    
+    caption_text = (
+        f"🤖 **Payment Session Invoice Generated**\n"
+        f"━━━━━━━━━━━━━━━━━━━━\n"
+        f"📦 **Selected Plan:** `{selected_plan['name']}`\n"
+        f"💳 **Fixed Amount:** `₹{selected_plan['price']}`\n"
+        f"📌 **UPI ID Ref:** `{UPI_ID}`\n\n"
+        f"👉 Scan the QR code image above using PhonePe, GPay, or Paytm, or click the link button down below to checkout instantly!"
+    )
+    
+    await callback.message.reply_photo(
+        photo=qr_image_url,
+        caption=caption_text,
+        reply_markup=keyboard
+    )
+    await callback.message.delete()
+    await callback.answer()
+
+@bot.on_callback_query(filters.regex("^confirm_paid$"))
+async def instruct_user_inputs(client: Client, callback: CallbackQuery):
+    if db.is_user_banned(callback.from_user.id): return
+    state = user_billing_state.get(callback.from_user.id)
+    if not state:
+        await callback.message.reply_text("❌ Session expired. Please send `/start` to select a plan again.")
+        await callback.answer()
+        return
+        
+    state["status"] = "AWAITING_DATA"
+    await callback.message.reply_text(
+        "📝 **Verification Requirements:**\n\n1️⃣ Send your **12-digit UTR / Reference Number** in text.\n2️⃣ Send the **Screenshot image** right after."
+    )
+    await callback.answer()
+
+# FIX 5: Integrated Advanced Financial Analytics Ledger Dashboard Reports Switch
 @bot.on_message(filters.command("status") & filters.user(ADMIN_ID) & filters.private)
 async def status_dashboard_handler(client: Client, message: Message):
-    stats = db.get_global_stats()
+    stats = db.get_financial_analytics()
     report = (
-        "📊 **Premium Payments Infrastructure Status**\n"
+        "📊 **Premium Payments & Financial Ledger Status**\n"
         "━━━━━━━━━━━━━━━━━━━━\n\n"
         f"👥 **Total Registered Users:** `{stats['total_users']}`\n"
-        f"📈 **New Users Today:** `{stats['today_users']}`\n"
-        f"🚫 **Blacklisted (Banned):** `{stats['banned_users']}`\n\n"
-        f"💰 **Successful Sales (Approved):** `{stats['approved_payments']}`\n"
-        f"⏳ **Verification Queue (Pending):** `{stats['pending_payments']}`\n\n"
-        f"🕒 **Server Time Sync:** `{datetime.now(timezone.utc).strftime('%Y-%m-%d %H:%M UTC')}`"
+        f"📈 **Total Paid Transactions:** `{stats['approved_count']}`\n"
+        f"⏳ **Pending Verification Queue:** `{stats['pending_queue']}`\n\n"
+        f"💵 **This Month Gross Revenue:** `₹{stats['month_revenue']}`\n"
+        f"💰 **Lifetime Net Revenue Assets:** `₹{stats['lifetime_revenue']}`\n\n"
+        f"🕒 **Server Sync Zone:** `{datetime.now(timezone.utc).strftime('%Y-%m-%d %H:%M UTC')}`"
     )
     await message.reply_text(report)
 
 # 🔨 BAN USER COMMAND
 @bot.on_message(filters.command("ban") & filters.user(ADMIN_ID) & filters.private)
 async def ban_user_handler(client: Client, message: Message):
-    if len(message.command) < 2:
-        await message.reply_text("⚠️ Syntax: `/ban <user_id>`")
-        return
+    if len(message.command) < 2: return
     target_id_str = message.command[1]
     if not target_id_str.isdigit(): return
     target_id = int(target_id_str)
     db.set_ban_status(target_id, 1)
     await message.reply_text(f"✅ User `{target_id}` has been **Blacklisted**.")
     try:
-        await bot.send_message(chat_id=LOG_CHANNEL_ID, text=f"🔨 **Admin Ban Action:**\nUser ID `{target_id}` was banned.")
+        await bot.send_message(chat_id=LOG_CHANNEL_ID, text=f"🔨 **Admin Ban Action:** User `{target_id}` banned.")
         await bot.send_message(chat_id=target_id, text="🚫 Your account has been banned from using this bot.")
     except Exception: pass
 
 # 🔓 UNBAN USER COMMAND
 @bot.on_message(filters.command("unban") & filters.user(ADMIN_ID) & filters.private)
 async def unban_user_handler(client: Client, message: Message):
-    if len(message.command) < 2:
-        await message.reply_text("⚠️ Syntax: `/unban <user_id>`")
-        return
+    if len(message.command) < 2: return
     target_id_str = message.command[1]
     if not target_id_str.isdigit(): return
     target_id = int(target_id_str)
     db.set_ban_status(target_id, 0)
-    await message.reply_text(f"✅ User `{target_id}` has been **Whitelisted/Unbanned**.")
+    await message.reply_text(f"✅ User `{target_id}` has been **Whitelisted**.")
     try:
-        await bot.send_message(chat_id=LOG_CHANNEL_ID, text=f"🔓 **Admin Unban Action:**\nUser ID `{target_id}` was unbanned.")
-        await bot.send_message(chat_id=target_id, text="🎉 Your account has been unbanned. You can use the bot normally now!")
+        await bot.send_message(chat_id=LOG_CHANNEL_ID, text=f"🔓 **Admin Unban Action:** User `{target_id}` unbanned.")
+        await bot.send_message(chat_id=target_id, text="🎉 Your account has been unbanned!")
     except Exception: pass
 
 # 📢 ADMIN BROADCAST LOGIC
 @bot.on_message(filters.command("broadcast") & filters.user(ADMIN_ID) & filters.private)
 async def broadcast_handler(client: Client, message: Message):
-    if not message.reply_to_message:
-        await message.reply_text("❌ Please use `/broadcast` as a **reply** to the message you want to blast.")
-        return
+    if not message.reply_to_message: return
     broadcast_msg = message.reply_to_message
     all_users = db.fetch_all_users()
     status_update_msg = await message.reply_text(f"⏳ **Starting Broadcast Blast...** Target: `{len(all_users)}` users.")
@@ -308,8 +390,8 @@ async def broadcast_handler(client: Client, message: Message):
             try: await status_update_msg.edit_text(f"⏳ Processing: `{idx}/{len(all_users)}` finished...")
             except Exception: pass
         await asyncio.sleep(0.05)
-    await status_update_msg.edit_text("✅ Broadcast complete. Stats sent to log channel.")
-    await bot.send_message(chat_id=LOG_CHANNEL_ID, text=f"📢 **Broadcast Campaign Finished!**\n\n✅ Success: `{success_count}`\n🚫 Blocked: `{blocked_count}`\n⚠️ Failed: `{failed_count}`")
+    await status_update_msg.edit_text("✅ Broadcast complete.")
+    await bot.send_message(chat_id=LOG_CHANNEL_ID, text=f"📢 **Broadcast Report Finished!**\n\n✅ Success: `{success_count}`\n🚫 Blocked: `{blocked_count}`")
 
 # 📥 LIVEGRAM REPLY ENGINE
 @bot.on_message(filters.chat(LOG_CHANNEL_ID) & filters.reply)
@@ -321,29 +403,8 @@ async def livegram_reply_routing_handler(client: Client, message: Message):
     try:
         await message.copy(chat_id=target_user_id)
         await message.reply_text(f"🚀 **Livegram Reply Dispatched Successfully to User:** `{target_user_id}`")
-    except (UserIsBlocked, InputUserDeactivated):
-        await message.reply_text(f"❌ **Delivery Failed:** Bot was blocked by user (`{target_user_id}`).")
     except Exception as e:
         await message.reply_text(f"❌ **Delivery Exception:** `{e}`")
-
-@bot.on_callback_query(filters.regex("^show_qr$"))
-async def show_qr_handler(client: Client, callback: CallbackQuery):
-    if db.is_user_banned(callback.from_user.id): return
-    keyboard = InlineKeyboardMarkup([[InlineKeyboardButton("✅ I Have Paid", callback_data="confirm_paid")]])
-    await callback.message.reply_text(
-        "🤖 **Payment Details Gateway Ledger**:\n\n▫️ **UPI ID:** `safehands@ibl`\n▫️ **Amount:** `₹99`",
-        reply_markup=keyboard
-    )
-    await callback.answer()
-
-@bot.on_callback_query(filters.regex("^confirm_paid$"))
-async def instruct_user_inputs(client: Client, callback: CallbackQuery):
-    if db.is_user_banned(callback.from_user.id): return
-    user_billing_state[callback.from_user.id] = {"status": "AWAITING_DATA", "utr": None, "photo": None}
-    await callback.message.reply_text(
-        "📝 **Verification Requirements:**\n\n1️⃣ Send your **UTR / Reference Number** in text.\n2️⃣ Send the **Screenshot image** right after."
-    )
-    await callback.answer()
 
 @bot.on_message((filters.text | filters.photo) & filters.private & ~filters.command(["start", "help", "broadcast", "status", "ban", "unban"]))
 async def forward_to_admin_manual_check(client: Client, message: Message):
@@ -353,7 +414,7 @@ async def forward_to_admin_manual_check(client: Client, message: Message):
 
     state = user_billing_state.get(user_id)
     if not state or state["status"] not in ["AWAITING_DATA", "COLLECTING"]:
-        await message.reply_text("👋 Hello! Please send `/start` and click **💳 Pay Now**.")
+        await message.reply_text("👋 Hello! Please send `/start` and select a subscription plan.")
         return
 
     content = message.text if message.text else message.caption
@@ -379,12 +440,16 @@ async def forward_to_admin_manual_check(client: Client, message: Message):
             await message.reply_text("⏳ UTR captured! Please dispatch your validation Image attachment capture right after.")
         return
 
-    inserted_row_id = db.add_payment_intent(state["utr"], user_id)
+    # Injected dynamic amount into tracking parameters
+    inserted_row_id = db.add_payment_intent(state["utr"], user_id, state["price"])
     if not inserted_row_id:
-        await message.reply_text("🚫 **Race Condition Conflict Alert:** Transaction verification pipeline drops identical entries.")
+        await message.reply_text("🚫 **Conflict Alert:** Transaction verification pipeline drops identical entries.")
         return
 
+    plan_name = PLANS[state["plan"]]["name"]
+    amount_paid = state["price"]
     user_billing_state.pop(user_id, None)
+    
     username_ref = f"@{message.from_user.username}" if message.from_user.username else "No Username"
     
     admin_keyboard = InlineKeyboardMarkup([
@@ -393,10 +458,11 @@ async def forward_to_admin_manual_check(client: Client, message: Message):
     ])
 
     admin_caption = (
-        f"💰 **New Verification Request Pending!**\n\n"
+        f"💰 **New Payment Verification Pending!**\n\n"
         f"👤 **User:** {message.from_user.first_name}\n"
         f"🆔 **ID:** `{user_id}`\n"
-        f"🌐 **Handle:** {username_ref}\n"
+        f"📦 **Plan:** {plan_name}\n"
+        f"💵 **Value:** `₹{amount_paid}`\n"
         f"🔢 **UTR Ref:** `{state['utr']}`"
     )
 
@@ -421,7 +487,6 @@ async def execution_routing_control_switches(client: Client, callback: CallbackQ
         return
 
     target_user_id = payment_record["user_id"]
-    target_utr = payment_record["utr"]
 
     if action == "appv":
         try:
@@ -453,7 +518,7 @@ async def execution_routing_control_switches(client: Client, callback: CallbackQ
     await callback.answer()
 
 async def main():
-    print("🔥 Secure Production Single Bot Framework Online with Full Admin Suite & Livegram Reply Link active.")
+    print("🔥 Secure Production Bot Online with Dynamic UPI QR & Financial Analytics Engines Active.")
     await bot.start()
     await asyncio.Event().wait()
 
