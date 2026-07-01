@@ -250,18 +250,16 @@ async def plan_selection_handler(client: Client, callback: CallbackQuery):
             [InlineKeyboardButton("✅ Proceed to Verify Payment", callback_data="confirm_paid")]
         ])
         
-        # Split message architecture (Fixes missing quote blocks in captions)
         await callback.message.reply_photo(photo=qr_stream)
         
+        # Explicit isolated visual envelope layout
         invoice_text = (
-            f"<b>🤖 Payment Session Invoice Generated</b>\n"
+            f"🤖 <b>Payment Session Invoice Generated</b>\n"
             f"━━━━━━━━━━━━━━━━━━━━\n"
-            f"<blockquote>"
-            f"📦 <b>Selected Plan:</b> <code>{selected_plan['name']}</code>\n"
+            f"<blockquote>📦 <b>Selected Plan:</b> <code>{selected_plan['name']}</code>\n"
             f"💳 <b>Fixed Amount:</b> <code>₹{selected_plan['price_inr']} (${selected_plan['price_usd']:.2f})</code>\n"
             f"📌 <b>UPI ID Ref:</b> <code>{UPI_ID}</code>\n\n"
-            f"Please complete your transfer, capture a screenshot, and click verify."
-            f"</blockquote>"
+            f"Please complete your transfer, capture a screenshot, and click verify.</blockquote>"
         )
         await callback.message.reply_text(invoice_text, reply_markup=keyboard)
         await callback.message.delete()
@@ -278,18 +276,17 @@ async def crypto_link_alert_handler(client: Client, callback: CallbackQuery):
     
     await DBManager.set_user_state(callback.from_user.id, {"method": "CRYPTO"})
     
+    # Fully wrapped structured string blocks
     crypto_text = (
-        f"<b>🪙 USDT Secure Invoicing Layer Assets</b>\n"
+        f"🪙 <b>USDT Secure Invoicing Layer Assets</b>\n"
         f"━━━━━━━━━━━━━━━━━━━━\n"
-        f"<blockquote>"
-        f"📦 <b>Plan:</b> <code>{selected_plan['name']}</code>\n"
+        f"<blockquote>📦 <b>Plan:</b> <code>{selected_plan['name']}</code>\n"
         f"💵 <b>Amount Due:</b> <code>${selected_plan['price_usd']:.2f} USDT</code>\n\n"
         f"<b>Tap any wallet address to copy instantly:</b>\n\n"
         f"🌐 <b>TRC20 Network Address:</b>\n<code>{USDT_TRC20}</code>\n\n"
         f"⚡ <b>BEP20 Network Address:</b>\n<code>{USDT_BEP20}</code>\n\n"
         f"💜 <b>Polygon POS Network Address:</b>\n<code>{USDT_POLYGON}</code>\n\n"
-        f"Complete transfer, capture transaction hash screen, then click verify below."
-        f"</blockquote>"
+        f"Complete transfer, capture transaction hash screen, then click verify below.</blockquote>"
     )
     
     keyboard = InlineKeyboardMarkup([[InlineKeyboardButton("✅ Proceed to Verify Payment", callback_data="confirm_paid")]])
@@ -310,19 +307,15 @@ async def instruct_user_inputs(client: Client, callback: CallbackQuery):
     
     if state.get("method") == "CRYPTO":
         prompt_text = (
-            "<b>📝 Verification Requirements (USDT Crypto)</b>\n\n"
-            "<blockquote>"
-            "1️⃣ Send your <b>64-character Transaction Hash / TxID string</b> in text format.\n"
-            "2️⃣ Send the transaction confirmation <b>Screenshot image</b> right after."
-            "</blockquote>"
+            "📝 <b>Verification Requirements (USDT Crypto)</b>\n\n"
+            "<blockquote>1️⃣ Send your <b>64-character Transaction Hash / TxID string</b> in text format.\n"
+            "2️⃣ Send the transaction confirmation <b>Screenshot image</b> right after.</blockquote>"
         )
     else:
         prompt_text = (
-            "<b>📝 Verification Requirements (UPI Fiat)</b>\n\n"
-            "<blockquote>"
-            "1️⃣ Send your <b>12-digit numeric UTR / Reference Number</b> in text format.\n"
-            "2️⃣ Send the bank receipt <b>Screenshot image</b> right after."
-            "</blockquote>"
+            "📝 <b>Verification Requirements (UPI Fiat)</b>\n\n"
+            "<blockquote>1️⃣ Send your <b>12-digit numeric UTR / Reference Number</b> in text format.\n"
+            "2️⃣ Send the bank receipt <b>Screenshot image</b> right after.</blockquote>"
         )
         
     await callback.message.reply_text(prompt_text)
@@ -337,16 +330,14 @@ async def status_dashboard_handler(client: Client, message: Message):
     lifetime_usd = stats['lifetime_revenue'] / 83.33
     
     report = (
-        f"<b>📊 Premium Payments & Financial Ledger Status</b>\n"
+        f"📊 <b>Premium Payments & Financial Ledger Status</b>\n"
         f"━━━━━━━━━━━━━━━━━━━━\n\n"
-        f"<blockquote>"
-        f"👥 <b>Total Registered Users:</b> <code>{stats['total_users']}</code>\n"
+        f"<blockquote>👥 <b>Total Registered Users:</b> <code>{stats['total_users']}</code>\n"
         f"📈 <b>Total Paid Transactions:</b> <code>{stats['approved_count']}</code>\n"
         f"⏳ <b>Pending Verification Queue:</b> <code>{stats['pending_queue']}</code>\n\n"
         f"💵 <b>This Month Gross Revenue:</b> <code>Rupees: ₹{stats['month_revenue']} (${month_usd:.2f})</code>\n"
         f"💰 <b>Lifetime Net Revenue Assets:</b> <code>Rupees: ₹{stats['lifetime_revenue']} (${lifetime_usd:.2f})</code>\n\n"
-        f"🕒 <b>Server Sync Zone:</b> <code>{datetime.now(timezone.utc).strftime('%Y-%m-%d %H:%M UTC')}</code>"
-        f"</blockquote>"
+        f"🕒 <b>Server Sync Zone:</b> <code>{datetime.now(timezone.utc).strftime('%Y-%m-%d %H:%M UTC')}</code></blockquote>"
     )
     await message.reply_text(report)
 
@@ -517,7 +508,7 @@ async def execution_routing_control_switches(client: Client, callback: CallbackQ
     
     payment_record = await DBManager.fetch_record_by_id(row_id_str)
     if not payment_record:
-        await callback.message.edit_caption(caption="❌ **Error:** Target database reference lost.")
+        await callback.message.edit_caption(caption="❌ <b>Error:</b> Target database reference lost.")
         await callback.answer()
         return
 
