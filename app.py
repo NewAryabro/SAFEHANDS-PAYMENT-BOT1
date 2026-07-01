@@ -48,21 +48,24 @@ import qrcode
 # ==========================================
 API_ID = int(os.environ.get("API_ID", 34042874))
 API_HASH = os.environ.get("API_HASH", "494b9f740bc2f8f0e1a17c1c9f27ed9c")
-# ✅ FIX: Fixed the token typo string here
 BOT_TOKEN = os.environ.get("BOT_TOKEN", "8492099684:AAH2lszBjqcZj5bmr_ouvzWKNi32FOUnuWc")
 ADMIN_ID = int(os.environ.get("ADMIN_ID", 2066626554))
 TARGET_CHANNEL_ID = int(os.environ.get("TARGET_CHANNEL_ID", -1001522411163))
 LOG_CHANNEL_ID = int(os.environ.get("LOG_CHANNEL_ID", -1001639319995))
-
 MONGO_URI = os.environ.get("MONGO_URI", "mongodb+srv://MarvelAndDc:MarvelAndDc@cluster0.z0uow.mongodb.net/?retryWrites=true&w=majority")
 
-# 💳 Payment Configs
+# 💳 Fiat UPI Configurations
 UPI_ID = "Telugumovies8985-1@oksbi"
 MERCHANT_NAME = "Premium Access"
 
+# 🪙 Secure Crypto Wallet Destinations
+USDT_TRC20 = "TY3h8jQ8rW4nEmM9ZpYx7b3tV6cK5sD2fX"      # <-- Replace with your real TRC20 Wallet Address
+USDT_BEP20 = "0x7a8b9c1d2e3f4a5b6c7d8e9f0a1b2c3d4e5f6a7b"  # <-- Replace with your real BEP20 Wallet Address
+USDT_POLYGON = "0x7a8b9c1d2e3f4a5b6c7d8e9f0a1b2c3d4e5f6a7b" # <-- Replace with your real Polygon Wallet Address
+
 PLANS = {
-    "standard": {"name": "Basic Standard Plan", "price": 99},
-    "premium": {"name": "Ultimate Premium Plan", "price": 299}
+    "standard": {"name": "Basic Standard Plan", "price_inr": 99, "price_usd": 1.20},
+    "premium": {"name": "Ultimate Premium Plan", "price_inr": 299, "price_usd": 3.60}
 }
 
 bot = Client(
@@ -147,7 +150,7 @@ class DBManager:
             })
             return row_id
         except Exception:
-            logging.exception("Failed to insert unique payment transaction mapping profile.")
+            logging.exception("Failed to insert unique payment profile context.")
             return None
 
     @staticmethod
@@ -219,8 +222,8 @@ async def start_handler(client: Client, message: Message):
         except Exception as e: logging.exception(e)
             
     keyboard = InlineKeyboardMarkup([
-        [InlineKeyboardButton("🗓️ Standard Access (₹99)", callback_data="select_standard")],
-        [InlineKeyboardButton("🚀 Premium Full Year (₹299)", callback_data="select_premium")],
+        [InlineKeyboardButton(f"🗓️ Standard Access ₹99 (${PLANS['standard']['price_usd']:.2f})", callback_data="select_standard")],
+        [InlineKeyboardButton(f"🚀 Premium Full Year ₹299 (${PLANS['premium']['price_usd']:.2f})", callback_data="select_premium")],
         [InlineKeyboardButton("📞 Support Desk", url=f"tg://user?id={ADMIN_ID}")]
     ])
     await message.reply_text(
@@ -235,23 +238,24 @@ async def plan_selection_handler(client: Client, callback: CallbackQuery):
     selected_plan = PLANS[plan_key]
     
     await DBManager.set_user_state(callback.from_user.id, {
-        "status": "INITIATED", "plan": plan_key, "price": selected_plan["price"], "utr": None, "photo": None
+        "status": "INITIATED", "plan": plan_key, "price": selected_plan["price_inr"], "utr": None, "photo": None
     })
     
     try:
-        qr_stream = get_local_upi_qr(selected_plan["price"])
+        qr_stream = get_local_upi_qr(selected_plan["price_inr"])
         
+        # Injected Crypto Action Switches (Pay in USDT)
         keyboard = InlineKeyboardMarkup([
-            [InlineKeyboardButton("📱 Mobile: Get Instant UPI Link", callback_data=f"paylink_{selected_plan['price']}")],
+            [InlineKeyboardButton("🪙 Pay in USDT", callback_data=f"cryptolink_{plan_key}")],
             [InlineKeyboardButton("✅ Proceed to Verify Payment", callback_data="confirm_paid")]
         ])
         
         caption_text = (
             f"🤖 **Payment Session Invoice Generated (Local QR)**\n━━━━━━━━━━━━━━━━━━━━\n"
-            f"📦 **Selected Plan:** `{selected_plan['name']}`\n💳 **Fixed Amount:** `₹{selected_plan['price']}`\n📌 **UPI ID Ref:** `{UPI_ID}`\n\n"
-            f"📱 **Mobile Users:** కింద ఉన్న 'Mobile: Get Instant UPI Link' బటన్ క్లిక్ చేయండి.\n\n"
-            f"📸 **Desktop Users:** పైనున్న QR Code ని స్కాన్ చేయండి.\n\n"
-            f"💸 _Pay exact rate amount, capture screenshot confirmation, and click button below._"
+            f"📦 **Selected Plan:** `{selected_plan['name']}`\n"
+            f"💳 **Fixed Amount:** `₹{selected_plan['price_inr']}` (${selected_plan['price_usd']:.2f})\n"
+            f"📌 **UPI ID Ref:** `{UPI_ID}`\n\n"
+            f"💸 _Pay exact rate amount, capture screenshot confirmation, and click button below to verify your subscription context._"
         )
         
         await callback.message.reply_photo(photo=qr_stream, caption=caption_text, reply_markup=keyboard)
@@ -262,18 +266,25 @@ async def plan_selection_handler(client: Client, callback: CallbackQuery):
     finally:
         await callback.answer()
 
-@bot.on_callback_query(filters.regex(r"^paylink_\d+$"))
-async def upi_link_alert_handler(client: Client, callback: CallbackQuery):
-    amount = callback.data.split("_")[1]
-    intent_url = f"upi://pay?pa={UPI_ID}&pn={urllib.parse.quote(MERCHANT_NAME)}&am={amount}&cu=INR"
+@bot.on_callback_query(filters.regex(r"^cryptolink_(standard|premium)$"))
+async def crypto_link_alert_handler(client: Client, callback: CallbackQuery):
+    plan_key = callback.data.split("_")[1]
+    selected_plan = PLANS[plan_key]
     
-    alert_text = (
-        f"👇 **కింద ఉన్న లింక్ ని ఒక్కసారి టచ్ చేసి కాపీ చేసుకోండి:**\n\n"
-        f"`{intent_url}`\n\n"
-        f"లింక్ ని కాపీ చేసి మీ PhonePe/GPay లో 'Pay to UPI ID' సెక్షన్ లో పేస్ట్ చేయండి!"
+    # Secure dynamic responsive markup without breaking standard layouts
+    crypto_text = (
+        f"🪙 **USDT Secure Invoicing Layer Assets:**\n"
+        f"━━━━━━━━━━━━━━━━━━━━\n"
+        f"📦 Plan: `{selected_plan['name']}`\n"
+        f"💵 Amount Due: `${selected_plan['price_usd']:.2f}`\n\n"
+        f"⚠️ *Tap any wallet address to copy cleanly:*\n\n"
+        f"🌐 **TRC20 Network Address:**\n`{USDT_TRC20}`\n\n"
+        f"⚡ **BEP20 Network Address:**\n`{USDT_BEP20}`\n\n"
+        f"💜 **Polygon POS Network Address:**\n`{USDT_POLYGON}`\n\n"
+        f"💸 _Complete transaction processing onto selective assets, take screenshot validation capture, then click the baseline verification switches._"
     )
-    await callback.message.reply_text(alert_text, disable_web_page_preview=True)
-    await callback.answer("🚀 UPI Link Dispatched Below!")
+    await callback.message.reply_text(crypto_text)
+    await callback.answer("🚀 Crypto Gates Open!")
 
 @bot.on_callback_query(filters.regex("^confirm_paid$"))
 async def instruct_user_inputs(client: Client, callback: CallbackQuery):
@@ -286,7 +297,7 @@ async def instruct_user_inputs(client: Client, callback: CallbackQuery):
         
     await DBManager.set_user_state(callback.from_user.id, {"status": "AWAITING_DATA"})
     await callback.message.reply_text(
-        "📝 **Verification Requirements:**\n\n1️⃣ Send your **12-digit UTR / Reference Number** in text.\n2️⃣ Send the **Screenshot image** right after."
+        "📝 **Verification Requirements:**\n\n1️⃣ Send your **12-digit UTR / Reference / TxID Number** in text.\n2️⃣ Send the **Screenshot image** right after."
     )
     await callback.answer()
 
@@ -374,7 +385,7 @@ async def broadcast_handler(client: Client, message: Message):
         except Exception: pass
         await asyncio.sleep(0.2)
         
-    await status_update_msg.edit_text("✅ Parallel broadcast deployment execution complete.")
+    await status_update_msg.edit_text("✅ Parallel broadcast complete.")
     await bot.send_message(
         chat_id=LOG_CHANNEL_ID, 
         text=f"📢 **Broadcast Matrix Report:**\n\n✅ Success: `{success_count}`\n🚫 Blocked/Removed: `{blocked_count}`\n⚠️ Failed: `{failed_count}`"
@@ -406,12 +417,13 @@ async def forward_to_admin_manual_check(client: Client, message: Message):
 
     content = message.text if message.text else message.caption
     if content:
-        utr_match = re.search(r"\b[0-9]{12}\b", content)
+        # Relaxed UTR tracking check matching engine rules to catch letters/numbers for Crypto hashes as well
+        utr_match = re.search(r"\b[A-Za-z0-9]{8,64}\b", content)
         if utr_match:
-            detected_utr = utr_match.group(0)
+            detected_utr = utr_match.group(0).upper()
             utr_status = await DBManager.check_utr(detected_utr)
             if utr_status in ["PENDING", "APPROVED"]:
-                await message.reply_text("🚫 **Security Alert:** This UTR Number has already been submitted.")
+                await message.reply_text("🚫 **Security Alert:** This Reference/TxID has already been submitted.")
                 return
             state["utr"] = detected_utr
             await DBManager.set_user_state(user_id, {"utr": detected_utr})
@@ -424,9 +436,9 @@ async def forward_to_admin_manual_check(client: Client, message: Message):
     if not state.get("utr") or not state.get("photo"):
         await DBManager.set_user_state(user_id, {"status": "COLLECTING"})
         if not state.get("utr"):
-            await message.reply_text("⏳ Please provide your 12-digit numeric Transaction ID / UTR Number accurately.")
+            await message.reply_text("⏳ Please provide your Reference / UTR / TxID string accurately.")
         else:
-            await message.reply_text("⏳ UTR captured! Please dispatch your validation Screenshot image right after.")
+            await message.reply_text("⏳ Reference captured! Please dispatch your validation Screenshot image right after.")
         return
 
     inserted_row_id = await DBManager.add_payment_intent(state["utr"], user_id, state["price"])
@@ -445,7 +457,7 @@ async def forward_to_admin_manual_check(client: Client, message: Message):
 
     admin_caption = (
         f"💰 **New Payment Verification Pending!**\n\n👤 **User:** {message.from_user.first_name}\n"
-        f"🆔 **ID:** `{user_id}`\n📦 **Plan:** {plan_name}\n💵 **Value:** `₹{amount_paid}`\n🔢 **UTR Ref:** `{state['utr']}`"
+        f"🆔 **ID:** `{user_id}`\n📦 **Plan:** {plan_name}\n💵 **Value:** `₹{amount_paid}`\n🔢 **Ref/TxID:** `{state['utr']}`"
     )
 
     log_message_node = await bot.send_photo(
@@ -507,11 +519,15 @@ async def execution_routing_control_switches(client: Client, callback: CallbackQ
             
     await callback.answer()
 
+# ==========================================
+# 🚀 CORE PLATFORM STARTUP BOOTSTRAPPER
+# ==========================================
 async def main():
     logging.info("⚙️ Bootstrapping core framework verification components...")
+    
     try:
         await mongo_client.admin.command("ping")
-        logging.info("📶 MongoDB Atlas Cloud Infrastructure Connection Verified Successfully!")
+        logging.info("📶 MongoDB Atlas Cloud Connection Verified Successfully!")
     except Exception as mongo_err:
         logging.critical(f"🛑 MongoDB Connection Failed! Execution halted: {mongo_err}")
         return
@@ -525,9 +541,10 @@ async def main():
     except Exception as idx_err:
         logging.warning(f"⚠️ Index compilation structural notice: {idx_err}")
 
-    logging.info("🔥 Hardened Enterprise Production Single Bot Framework Online.")
+    logging.info("🔥 Hardened Enterprise Production Single Bot Framework Online with Crypto Modules Active.")
     await bot.start()
     await asyncio.Event().wait()
 
 if __name__ == "__main__":
     loop.run_until_complete(main())
+        
