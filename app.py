@@ -5,6 +5,8 @@ import time
 import sqlite3
 import re
 import urllib.parse
+import urllib.request
+from io import BytesIO
 from datetime import datetime, timezone, timedelta
 
 # ==========================================
@@ -37,8 +39,8 @@ ADMIN_ID = 2066626554
 TARGET_CHANNEL_ID = -1001522411163  
 LOG_CHANNEL_ID = -1001639319995     
 
-# 💳 Payment Gateway Configurations
-UPI_ID = "safehands@ibl"
+# 💳 Payment Gateway Configurations (UPDATED USER UPI)
+UPI_ID = "Telugumovies8985-1@oksbi"
 MERCHANT_NAME = "Premium Access"
 
 # 🗓️ Subscription Plans Context Map
@@ -222,11 +224,19 @@ db = Database()
 user_billing_state = {}
 
 # ==========================================
-# Helper Modules (Dynamic QR Code Generation Engine)
+# Helper Modules (Stream-Based QR Engine)
 # ==========================================
-def generate_upi_qr_url(amount: int) -> str:
+def get_upi_qr_stream(amount: int) -> BytesIO:
     payload = f"upi://pay?pa={UPI_ID}&pn={urllib.parse.quote(MERCHANT_NAME)}&am={amount}&cu=INR"
-    return f"https://chart.googleapis.com/chart?chs=300x300&cht=qr&chl={urllib.parse.quote(payload)}"
+    url = f"https://chart.googleapis.com/chart?chs=300x300&cht=qr&chl={urllib.parse.quote(payload)}"
+    
+    req = urllib.request.Request(url, headers={'User-Agent': 'Mozilla/5.0'})
+    with urllib.request.urlopen(req) as response:
+        img_bytes = response.read()
+    
+    bio = BytesIO(img_bytes)
+    bio.name = "payment_qr.png"
+    return bio
 
 # ==========================================
 # 🤖 BOT INTERFACE LOGIC FLOWS
@@ -277,32 +287,38 @@ async def plan_selection_handler(client: Client, callback: CallbackQuery):
         "status": "INITIATED", "plan": plan_key, "price": selected_plan["price"], "utr": None, "photo": None
     }
     
-    qr_image_url = generate_upi_qr_url(selected_plan["price"])
-    intent_url = f"upi://pay?pa={UPI_ID}&pn={urllib.parse.quote(MERCHANT_NAME)}&am={selected_plan['price']}&cu=INR"
+    proc_msg = await callback.message.reply_text("⏳ Generating secure payment invoice session...")
     
-    # ✅ FIX: Native Callback payload execution paths ONLY inside keyboards prevents raw schema url errors
-    keyboard = InlineKeyboardMarkup([
-        [InlineKeyboardButton("✅ Proceed to Verify Payment", callback_data="confirm_paid")]
-    ])
-    
-    caption_text = (
-        f"🤖 **Payment Session Invoice Generated**\n"
-        f"━━━━━━━━━━━━━━━━━━━━\n"
-        f"📦 **Selected Plan:** `{selected_plan['name']}`\n"
-        f"💳 **Fixed Amount:** `₹{selected_plan['price']}`\n"
-        f"📌 **UPI ID Ref:** `{UPI_ID}`\n\n"
-        f"📱 **Mobile Users:** [👉 Click Here to Pay Instantly]({intent_url})\n\n"
-        f"📸 **Desktop Users:** Scan the QR code image above using PhonePe, GPay, or Paytm.\n\n"
-        f"💸 _Pay standard rates, take a screenshot, and click the button below to verify._"
-    )
-    
-    await callback.message.reply_photo(
-        photo=qr_image_url,
-        caption=caption_text,
-        reply_markup=keyboard
-    )
-    await callback.message.delete()
-    await callback.answer()
+    try:
+        qr_stream = get_upi_qr_stream(selected_plan["price"])
+        intent_url = f"upi://pay?pa={UPI_ID}&pn={urllib.parse.quote(MERCHANT_NAME)}&am={selected_plan['price']}&cu=INR"
+        
+        keyboard = InlineKeyboardMarkup([
+            [InlineKeyboardButton("✅ Proceed to Verify Payment", callback_data="confirm_paid")]
+        ])
+        
+        caption_text = (
+            f"🤖 **Payment Session Invoice Generated**\n"
+            f"━━━━━━━━━━━━━━━━━━━━\n"
+            f"📦 **Selected Plan:** `{selected_plan['name']}`\n"
+            f"💳 **Fixed Amount:** `₹{selected_plan['price']}`\n"
+            f"📌 **UPI ID Ref:** `{UPI_ID}`\n\n"
+            f"📱 **Mobile Users:** [👉 Click Here to Pay Instantly]({intent_url})\n\n"
+            f"📸 **Desktop Users:** Scan the QR code image above using PhonePe, GPay, or Paytm.\n\n"
+            f"💸 _Pay standard rates, take a screenshot, and click the button below to verify._"
+        )
+        
+        await callback.message.reply_photo(
+            photo=qr_stream,
+            caption=caption_text,
+            reply_markup=keyboard
+        )
+        await callback.message.delete()
+    except Exception as e:
+        await callback.message.reply_text(f"❌ **Invoice Engine Failure:** `{e}`. Please contact Support.")
+    finally:
+        await proc_msg.delete()
+        await callback.answer()
 
 @bot.on_callback_query(filters.regex("^confirm_paid$"))
 async def instruct_user_inputs(client: Client, callback: CallbackQuery):
@@ -508,7 +524,7 @@ async def execution_routing_control_switches(client: Client, callback: CallbackQ
     await callback.answer()
 
 async def main():
-    print("🔥 Secure Production Bot Online with Dynamic UPI QR & Financial Analytics Engines Active.")
+    print("🔥 Secure Production Bot Online with Stream-Based QR Engine & Updated UPI.")
     await bot.start()
     await asyncio.Event().wait()
 
