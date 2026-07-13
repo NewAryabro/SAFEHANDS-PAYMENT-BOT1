@@ -402,7 +402,7 @@ async def ban_user_handler(client: Client, message: Message):
     if len(message.command) < 2: return
     target_id_str = message.command[1]
     if not target_id_str.isdigit(): return
-    target_id = int(target_id)
+    target_id = int(target_id_str)
     
     await DBManager.set_ban_status(target_id, 1)
     await message.reply_text(f"✅ User <code>{target_id}</code> Blacklisted.")
@@ -484,9 +484,10 @@ async def livegram_reply_routing_handler(client: Client, message: Message):
         await message.copy(chat_id=target_user_id)
         await message.reply_text(f"🚀 <b>Livegram Reply Dispatched to User:</b> <code>{target_user_id}</code>")
     except Exception as e:
-        logging.exception(f"Livegram message delivery fatal: {e}")
+        logging.exception(f"Livegram message delivery routing fatal: {e}")
         await message.reply_text(f"❌ <b>Delivery Exception Failure:</b> <code>{html.escape(str(e))}</code>")
 
+# ✅ FIXED INTAKE DATA PIPELINE (Proper step-by-step guidance for TxID and Photo)
 @bot.on_message(filters.private & ~filters.command(["start", "help", "broadcast", "status", "ban", "unban"]))
 async def forward_to_admin_manual_check(client: Client, message: Message):
     if await check_banned_middleware(message): return
@@ -502,8 +503,7 @@ async def forward_to_admin_manual_check(client: Client, message: Message):
     if content:
         detected_utr = None
         upi_match = re.search(r"\b\d{12}\b", content)
-        # ✅ FIX: Hardened Alpha-Hexadecimal matching parameters (Strict block against non-hex characters like 't')
-        crypto_match = re.search(r"\b(0X)?[A-Fa-f0-9]{64}\b", content)
+        crypto_match = re.search(r"\b(0X)?[A-Fa-f0-9]{64}\b", content.upper())
         
         if upi_match:
             detected_utr = upi_match.group(0)
@@ -523,12 +523,14 @@ async def forward_to_admin_manual_check(client: Client, message: Message):
         state["photo"] = photo_id
         await DBManager.set_user_state(user_id, state)
 
+    # ✅ FIXED STEP LOGIC: Checking parameters cleanly and routing correct helper texts
     if not state.get("utr") or not state.get("photo"):
         state["status"] = "COLLECTING"
         await DBManager.set_user_state(user_id, state)
+        
         if not state.get("utr"):
             await message.reply_text("⏳ Please provide your Reference / UTR / TxID string accurately.")
-        else:
+        elif not state.get("photo"):
             await message.reply_text("⏳ Reference captured! Please dispatch your validation Screenshot image right after.")
         return
 
@@ -600,7 +602,7 @@ async def execution_routing_control_switches(client: Client, callback: CallbackQ
             )
             await callback.message.edit_caption(caption=f"{callback.message.caption}\n\n🟢 <b>STATUS: APPROVED TRACK LOG</b>")
         except Exception as e:
-            logging.exception(f"Link tracking fatal: {e}")
+            logging.exception(f"Link tracking runtime fatal: {e}")
             await callback.message.reply_text(f"❌ <b>Link Creation Engine Failure:</b> <code>{html.escape(str(e))}</code>")
 
     elif action == "rejc":
@@ -614,7 +616,7 @@ async def execution_routing_control_switches(client: Client, callback: CallbackQ
             )
             await callback.message.edit_caption(caption=f"{callback.message.caption}\n\n🔴 <b>STATUS: REJECTED TRACK LOG</b>")
         except Exception as e: 
-            logging.exception(f"Rejection workflow crash: {e}")
+            logging.exception(f"Rejection workflow trace crash: {e}")
             
     await callback.answer()
 
@@ -645,3 +647,5 @@ async def main():
 
 if __name__ == "__main__":
     loop.run_until_complete(main())
+    
+                
