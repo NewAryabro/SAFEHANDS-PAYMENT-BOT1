@@ -59,9 +59,9 @@ UPI_ID = "Telugumovies8985-1@oksbi"
 MERCHANT_NAME = "Premium Access"
 
 # 🪙 Secure Crypto Wallet Destinations
-USDT_TRC20 = "TY3h8jQ8rW4nEmM9ZpYx7b3tV6cK5sD2fX"      
-USDT_BEP20 = "0x7a8b9c1d2e3f4a5b6c7d8e9f0a1b2c3d4e5f6a7b"  
-USDT_POLYGON = "0x7a8b9c1d2e3f4a5b6c7d8e9f0a1b2c3d4e5f6a7b" 
+USDT_TRC20 = "TM318UtCJYArRW3h2nyoeGug4PvVWSipbg"      
+USDT_BEP20 = "0x7961231FA0de4C70B65BFfe877696858DC2cC7EB"  
+USDT_POLYGON = "0x7961231FA0de4C70B65BFfe877696858DC2cC7EB" 
 
 # ==========================================
 # 🎯 MULTI-TARGET CHANNELS VAULT CONFIG
