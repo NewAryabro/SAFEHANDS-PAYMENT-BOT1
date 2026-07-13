@@ -49,7 +49,7 @@ import qrcode
 # ==========================================
 API_ID = int(os.environ.get("API_ID", 34042874))
 API_HASH = os.environ.get("API_HASH", "494b9f740bc2f8f0e1a17c1c9f27ed9c")
-BOT_TOKEN = os.environ.get("BOT_TOKEN", "8492099684:AAH2lszBjqcZj5bmr_ouvzWKNi32FOUnuWc")
+BOT_TOKEN = os.environ.get("BOT_TOKEN", "8304614884:AAHQnlLGTui3lZZ6An8cxZRiBi2ZZYn3RLc")
 ADMIN_ID = int(os.environ.get("ADMIN_ID", 2066626554))
 LOG_CHANNEL_ID = int(os.environ.get("LOG_CHANNEL_ID", -1001639319995))
 MONGO_URI = os.environ.get("MONGO_URI", "mongodb+srv://MarvelAndDc:MarvelAndDc@cluster0.z0uow.mongodb.net/?retryWrites=true&w=majority")
