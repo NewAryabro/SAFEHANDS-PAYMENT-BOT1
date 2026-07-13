@@ -68,7 +68,7 @@ USDT_POLYGON = "0x7a8b9c1d2e3f4a5b6c7d8e9f0a1b2c3d4e5f6a7b"
 # ==========================================
 # ⚠️ Replace these dummy IDs with your real Telegram Channel IDs (-100...)
 CH1_GAME = -1001522411163
-CH2_HOT = -1001999999999
+CH2_HOT = -1001515841046
 CH3_EDITABLE = -1001888888888
 CH4_EDITABLE = -1001777777777
 CH5_EDITABLE = -1001666666666
