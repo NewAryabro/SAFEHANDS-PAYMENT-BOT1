@@ -64,11 +64,10 @@ USDT_BEP20 = "0x7a8b9c1d2e3f4a5b6c7d8e9f0a1b2c3d4e5f6a7b"
 USDT_POLYGON = "0x7a8b9c1d2e3f4a5b6c7d8e9f0a1b2c3d4e5f6a7b" 
 
 # ==========================================
-# 🎯 MULTI-TARGET CHANNELS CONFIGURATION VAULT
+# 🎯 MULTI-TARGET CHANNELS VAULT CONFIG
 # ==========================================
-# ⚠️ Replace these dummy IDs with your real Telegram Channel IDs (-100...)
 CH1_GAME = -1001522411163
-CH2_HOT = -1001515841046
+CH2_HOT = -1001999999999
 CH3_EDITABLE = -1001888888888
 CH4_EDITABLE = -1001777777777
 CH5_EDITABLE = -1001666666666
@@ -78,11 +77,11 @@ CH7_EDITABLE = -1001444444444
 CHANNELS_REGISTRY = {
     "game_comp": {"name": "Game Competition 🎮", "price_inr": 99, "price_usd": 1.20, "target_id": CH1_GAME},
     "hot_stuff": {"name": "Hot Stuff & Heroine stuff 🥵", "price_inr": 199, "price_usd": 2.40, "target_id": CH2_HOT},
-    "slot_3": {"name": "Premium Slots 3 ✨ (Editable)", "price_inr": 149, "price_usd": 1.80, "target_id": CH3_EDITABLE},
-    "slot_4": {"name": "Premium Slots 4 🚀 (Editable)", "price_inr": 299, "price_usd": 3.60, "target_id": CH4_EDITABLE},
-    "slot_5": {"name": "Premium Slots 5 🎬 (Editable)", "price_inr": 399, "price_usd": 4.80, "target_id": CH5_EDITABLE},
-    "slot_6": {"name": "Premium Slots 6 💎 (Editable)", "price_inr": 499, "price_usd": 6.00, "target_id": CH6_EDITABLE},
-    "slot_7": {"name": "Premium Slots 7 🔥 (Editable)", "price_inr": 599, "price_usd": 7.20, "target_id": CH7_EDITABLE}
+    "slot_3": {"name": "Premium Slots 3 ✨", "price_inr": 149, "price_usd": 1.80, "target_id": CH3_EDITABLE},
+    "slot_4": {"name": "Premium Slots 4 🚀", "price_inr": 299, "price_usd": 3.60, "target_id": CH4_EDITABLE},
+    "slot_5": {"name": "Premium Slots 5 🎬", "price_inr": 399, "price_usd": 4.80, "target_id": CH5_EDITABLE},
+    "slot_6": {"name": "Premium Slots 6 💎", "price_inr": 499, "price_usd": 6.00, "target_id": CH6_EDITABLE},
+    "slot_7": {"name": "Premium Slots 7 🔥", "price_inr": 599, "price_usd": 7.20, "target_id": CH7_EDITABLE}
 }
 
 bot = Client(
@@ -243,7 +242,6 @@ async def start_handler(client: Client, message: Message):
         try: await bot.send_message(chat_id=LOG_CHANNEL_ID, text=new_user_log)
         except Exception as e: logging.exception(f"Failed to log user startup: {e}")
             
-    # ✅ FIX: Dynamic Multi-Channel selection buttons array mapped natively from Config Registry Slots
     buttons_list = []
     for key, info in CHANNELS_REGISTRY.items():
         btn_text = f"🔗 {info['name']} - ₹{info['price_inr']} (${info['price_usd']:.2f})"
@@ -251,8 +249,11 @@ async def start_handler(client: Client, message: Message):
     buttons_list.append([InlineKeyboardButton("📞 Support Desk", url=f"tg://user?id={ADMIN_ID}")])
     
     keyboard = InlineKeyboardMarkup(buttons_list)
+    # ✅ FIX: Highly clean, sharp and prominent text layout alignment (No loose blockquotes)
     await message.reply_text(
-        f"<b><blockquote>👋 Hello {safe_first_name},\n\nWelcome to Premium Channels Gateway Portal. Select the specific private channel below you wish to purchase access for:</blockquote></b>",
+        f"👋 <b>Hello {safe_first_name},</b>\n\n"
+        f"Welcome to Premium Channels Gateway Portal.\n\n"
+        f"⚡ <b>Select the specific channel below to purchase your private invite access link:</b>",
         reply_markup=keyboard
     )
 
@@ -265,7 +266,7 @@ async def plan_selection_handler(client: Client, callback: CallbackQuery):
     channel_key = callback.data.split("_", 1)[1]
     selected_channel = CHANNELS_REGISTRY.get(channel_key)
     if not selected_channel:
-        await callback.answer("❌ Selected channel layout configuration not found.", show_alert=True)
+        await callback.answer("❌ Config trace empty.", show_alert=True)
         return
         
     safe_channel_name = html.escape(selected_channel["name"])
@@ -277,6 +278,7 @@ async def plan_selection_handler(client: Client, callback: CallbackQuery):
     try:
         qr_stream = get_local_upi_qr(selected_channel["price_inr"])
         
+        # ✅ FIX: Replaced broad choices. Dynamic isolated verification path buttons only (Hides editable slots matrix)
         keyboard = InlineKeyboardMarkup([
             [InlineKeyboardButton("🪙 Pay in USDT (Crypto)", callback_data=f"cryptolink_{channel_key}")],
             [InlineKeyboardButton("✅ Proceed to Verify Payment", callback_data="confirm_paid")]
@@ -286,11 +288,11 @@ async def plan_selection_handler(client: Client, callback: CallbackQuery):
         
         invoice_text = (
             f"<b>🤖 Payment Session Invoice Generated</b>\n"
-            f"━━━━━━━━━━━━━━━━━━━━\n"
-            f"<b><blockquote>📦 Target Channel: <code>{safe_channel_name}</code>\n"
-            f"💳 Fixed Amount: <code>₹{selected_channel['price_inr']} (${selected_channel['price_usd']:.2f})</code>\n"
-            f"📌 UPI ID Ref: <code>{UPI_ID}</code>\n\n"
-            f"Please complete your transfer, capture a screenshot confirmation dashboard, then click verify button below.</blockquote></b>"
+            f"━━━━━━━━━━━━━━━━━━━━\n\n"
+            f"📦 <b>Target Channel:</b> <code>{safe_channel_name}</code>\n"
+            f"💳 <b>Fixed Amount:</b> <code>₹{selected_channel['price_inr']} (${selected_channel['price_usd']:.2f})</code>\n"
+            f"📌 <b>UPI ID Ref:</b> <code>{UPI_ID}</code>\n\n"
+            f"👉 Complete your transfer, capture a screenshot confirmation dashboard, then click verify button down below."
         )
         await callback.message.reply_text(invoice_text, reply_markup=keyboard)
         
@@ -298,8 +300,8 @@ async def plan_selection_handler(client: Client, callback: CallbackQuery):
         except Exception: pass
             
     except Exception as e:
-        logging.exception(f"Invoice creation crash layout handler: {e}")
-        await callback.message.reply_text("❌ <b>Invoice Engine Failure.</b> Please try again or contact support.")
+        logging.exception(f"Invoice crash log: {e}")
+        await callback.message.reply_text("❌ <b>Invoice Engine Failure.</b> Please try again.")
     finally:
         await callback.answer()
 
@@ -312,29 +314,30 @@ async def crypto_link_alert_handler(client: Client, callback: CallbackQuery):
     channel_key = callback.data.split("_", 1)[1]
     selected_channel = CHANNELS_REGISTRY.get(channel_key)
     if not selected_channel:
-        await callback.answer("❌ Channel registration lookup trace empty.", show_alert=True)
+        await callback.answer("❌ Channel trace lost.", show_alert=True)
         return
         
     safe_channel_name = html.escape(selected_channel["name"])
     
     state = await DBManager.get_user_state(callback.from_user.id)
     if not state:
-        await callback.answer("❌ Session Invalid. Please restart.", show_alert=True)
+        await callback.answer("❌ Session Invalid.", show_alert=True)
         return
         
     state["method"] = "CRYPTO"
     await DBManager.set_user_state(callback.from_user.id, state)
     
+    # ✅ FIX: Pristine dynamic absolute text visualization maps
     crypto_text = (
         f"<b>🪙 USDT Secure Invoicing Layer Assets</b>\n"
-        f"━━━━━━━━━━━━━━━━━━━━\n"
-        f"<b><blockquote>📦 Target: <code>{safe_channel_name}</code>\n"
-        f"💵 Amount Due: <code>${selected_channel['price_usd']:.2f} USDT</code>\n\n"
-        f"Tap any wallet address to copy instantly:\n\n"
-        f"🌐 TRC20 Network Address:\n<code>{USDT_TRC20}</code>\n\n"
-        f"⚡ BEP20 Network Address:\n<code>{USDT_BEP20}</code>\n\n"
-        f"💜 Polygon POS Network Address:\n<code>{USDT_POLYGON}</code>\n\n"
-        f"Complete transfer, capture transaction hash screen, then click verify below.</blockquote></b>"
+        f"━━━━━━━━━━━━━━━━━━━━\n\n"
+        f"📦 <b>Target Channel:</b> <code>{safe_channel_name}</code>\n"
+        f"💵 <b>Amount Due:</b> <code>${selected_channel['price_usd']:.2f} USDT</code>\n\n"
+        f"👇 <b>Tap any wallet address to copy instantly:</b>\n\n"
+        f"🌐 <b>TRC20 Network Address:</b>\n<code>{USDT_TRC20}</code>\n\n"
+        f"⚡ <b>BEP20 Network Address:</b>\n<code>{USDT_BEP20}</code>\n\n"
+        f"💜 <b>Polygon POS Network Address:</b>\n<code>{USDT_POLYGON}</code>\n\n"
+        f"👉 Complete transfer on selected network, capture transaction hash screen view, then click verify below."
     )
     
     keyboard = InlineKeyboardMarkup([[InlineKeyboardButton("✅ Proceed to Verify Payment", callback_data="confirm_paid")]])
@@ -351,7 +354,7 @@ async def instruct_user_inputs(client: Client, callback: CallbackQuery):
         
     state = await DBManager.get_user_state(callback.from_user.id)
     if not state:
-        await callback.answer("❌ Verification Session Expired. Please restart.", show_alert=True)
+        await callback.answer("❌ Verification Session Expired.", show_alert=True)
         return
         
     state["status"] = "AWAITING_DATA"
@@ -360,14 +363,14 @@ async def instruct_user_inputs(client: Client, callback: CallbackQuery):
     if state.get("method") == "CRYPTO":
         prompt_text = (
             "<b>📝 Verification Requirements (USDT Crypto)</b>\n\n"
-            "<b><blockquote>1️⃣ Send your 64-character Transaction Hash / TxID string in text format.\n"
-            "2️⃣ Send the transaction confirmation Screenshot image right after.</blockquote></b>"
+            "1️⃣ Send your <b>64-character Transaction Hash / TxID string</b> in text format.\n"
+            "2️⃣ Send the transaction confirmation <b>Screenshot image</b> right after."
         )
     else:
         prompt_text = (
             "<b>📝 Verification Requirements (UPI Fiat)</b>\n\n"
-            "<b><blockquote>1️⃣ Send your 12-digit numeric UTR / Reference Number in text format.\n"
-            "2️⃣ Send the bank receipt Screenshot image right after.</blockquote></b>"
+            "1️⃣ Send your <b>12-digit numeric UTR / Reference Number</b> in text format.\n"
+            "2️⃣ Send the bank receipt <b>Screenshot image</b> right after."
         )
         
     await callback.message.reply_text(prompt_text)
@@ -384,12 +387,12 @@ async def status_dashboard_handler(client: Client, message: Message):
     report = (
         f"<b>📊 Premium Payments & Financial Ledger Status</b>\n"
         f"━━━━━━━━━━━━━━━━━━━━\n\n"
-        f"<b><blockquote>👥 Total Registered Users: <code>{stats['total_users']}</code>\n"
-        f"📈 Total Paid Transactions: <code>{stats['approved_count']}</code>\n"
-        f"⏳ Pending Verification Queue: <code>{stats['pending_queue']}</code>\n\n"
-        f"💵 This Month Gross Revenue: <code>Rupees: ₹{stats['month_revenue']} (${month_usd:.2f})</code>\n"
-        f"💰 Lifetime Net Revenue Assets: <code>Rupees: ₹{stats['lifetime_revenue']} (${lifetime_usd:.2f})</code>\n\n"
-        f"🕒 Server Sync Zone: <code>{datetime.now(timezone.utc).strftime('%Y-%m-%d %H:%M UTC')}</code></blockquote></b>"
+        f"👥 <b>Total Registered Users:</b> <code>{stats['total_users']}</code>\n"
+        f"📈 <b>Total Paid Transactions:</b> <code>{stats['approved_count']}</code>\n"
+        f"⏳ <b>Pending Verification Queue:</b> <code>{stats['pending_queue']}</code>\n\n"
+        f"💵 <b>This Month Gross Revenue:</b> <code>Rupees: ₹{stats['month_revenue']} (${month_usd:.2f})</code>\n"
+        f"💰 <b>Lifetime Net Revenue Assets:</b> <code>Rupees: ₹{stats['lifetime_revenue']} (${lifetime_usd:.2f})</code>\n\n"
+        f"🕒 <b>Server Sync Zone:</b> <code>{datetime.now(timezone.utc).strftime('%Y-%m-%d %H:%M UTC')}</code>"
     )
     await message.reply_text(report)
 
@@ -399,14 +402,14 @@ async def ban_user_handler(client: Client, message: Message):
     if len(message.command) < 2: return
     target_id_str = message.command[1]
     if not target_id_str.isdigit(): return
-    target_id = int(target_id_str)
+    target_id = int(target_id)
     
     await DBManager.set_ban_status(target_id, 1)
     await message.reply_text(f"✅ User <code>{target_id}</code> Blacklisted.")
     try:
         await bot.send_message(chat_id=LOG_CHANNEL_ID, text=f"🔨 <b>Admin Ban:</b> User <code>{target_id}</code> banned.")
         await bot.send_message(chat_id=target_id, text="🚫 Your account has been blacklisted by the Administrator.")
-    except Exception as e: logging.exception(f"Ban warning delivery skipped: {e}")
+    except Exception as e: logging.exception(f"Ban notification error: {e}")
 
 @bot.on_message(filters.command("unban") & filters.private)
 async def unban_user_handler(client: Client, message: Message):
@@ -419,7 +422,7 @@ async def unban_user_handler(client: Client, message: Message):
     await DBManager.set_ban_status(target_id, 0)
     await message.reply_text(f"✅ User <code>{target_id}</code> Whitelisted.")
     try: await bot.send_message(chat_id=target_id, text="🎉 Your account has been unbanned!")
-    except Exception as e: logging.exception(f"Unban announcement skipped: {e}")
+    except Exception as e: logging.exception(f"Unban notification error: {e}")
 
 async def send_single_broadcast(broadcast_msg: Message, user_id: int):
     try:
@@ -436,7 +439,7 @@ async def send_single_broadcast(broadcast_msg: Message, user_id: int):
         await DBManager.remove_user(user_id)
         return "BLOCKED"
     except Exception as e:
-        logging.exception(f"Broadcast generic track capture: {e}")
+        logging.exception(f"Broadcast generic track: {e}")
         return "FAILED"
 
 @bot.on_message(filters.command("broadcast") & filters.private)
@@ -481,7 +484,7 @@ async def livegram_reply_routing_handler(client: Client, message: Message):
         await message.copy(chat_id=target_user_id)
         await message.reply_text(f"🚀 <b>Livegram Reply Dispatched to User:</b> <code>{target_user_id}</code>")
     except Exception as e:
-        logging.exception(f"Livegram message delivery routing fatal: {e}")
+        logging.exception(f"Livegram message delivery fatal: {e}")
         await message.reply_text(f"❌ <b>Delivery Exception Failure:</b> <code>{html.escape(str(e))}</code>")
 
 @bot.on_message(filters.private & ~filters.command(["start", "help", "broadcast", "status", "ban", "unban"]))
@@ -499,7 +502,8 @@ async def forward_to_admin_manual_check(client: Client, message: Message):
     if content:
         detected_utr = None
         upi_match = re.search(r"\b\d{12}\b", content)
-        crypto_match = re.search(r"\b(0X)?[A-Fa-f0-9]{64}\b", content.upper())
+        # ✅ FIX: Hardened Alpha-Hexadecimal matching parameters (Strict block against non-hex characters like 't')
+        crypto_match = re.search(r"\b(0X)?[A-Fa-f0-9]{64}\b", content)
         
         if upi_match:
             detected_utr = upi_match.group(0)
@@ -528,7 +532,6 @@ async def forward_to_admin_manual_check(client: Client, message: Message):
             await message.reply_text("⏳ Reference captured! Please dispatch your validation Screenshot image right after.")
         return
 
-    # Pass the targeted channel configuration token key down onto storage layers
     inserted_row_id = await DBManager.add_payment_intent(state["utr"], user_id, state["price"], state["channel_key"])
     if not inserted_row_id:
         await message.reply_text("🚫 <b>Security Exception:</b> This exact TxID/UTR database trace token already exists inside our verification pipelines.")
@@ -585,7 +588,6 @@ async def execution_routing_control_switches(client: Client, callback: CallbackQ
     if action == "appv":
         try:
             expire_datetime_obj = datetime.now(timezone.utc) + timedelta(days=1)
-            # ✅ FIX: Creating specific chat invite link mapped dynamically to the paid channel's target ID
             invite_link_payload = await bot.create_chat_invite_link(
                 chat_id=selected_channel["target_id"], member_limit=1, expire_date=expire_datetime_obj
             )
@@ -598,7 +600,7 @@ async def execution_routing_control_switches(client: Client, callback: CallbackQ
             )
             await callback.message.edit_caption(caption=f"{callback.message.caption}\n\n🟢 <b>STATUS: APPROVED TRACK LOG</b>")
         except Exception as e:
-            logging.exception(f"Link tracking runtime fatal: {e}")
+            logging.exception(f"Link tracking fatal: {e}")
             await callback.message.reply_text(f"❌ <b>Link Creation Engine Failure:</b> <code>{html.escape(str(e))}</code>")
 
     elif action == "rejc":
@@ -612,7 +614,7 @@ async def execution_routing_control_switches(client: Client, callback: CallbackQ
             )
             await callback.message.edit_caption(caption=f"{callback.message.caption}\n\n🔴 <b>STATUS: REJECTED TRACK LOG</b>")
         except Exception as e: 
-            logging.exception(f"Rejection workflow trace crash: {e}")
+            logging.exception(f"Rejection workflow crash: {e}")
             
     await callback.answer()
 
@@ -643,4 +645,3 @@ async def main():
 
 if __name__ == "__main__":
     loop.run_until_complete(main())
-    
