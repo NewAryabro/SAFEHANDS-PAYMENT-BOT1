@@ -360,18 +360,12 @@ async def instruct_user_inputs(client: Client, callback: CallbackQuery):
     state["status"] = "AWAITING_DATA"
     await DBManager.set_user_state(callback.from_user.id, state)
     
-    if state.get("method") == "CRYPTO":
-        prompt_text = (
-            "<b>📝 Verification Requirements (USDT Crypto)</b>\n\n"
-            "1️⃣ Send your <b>64-character Transaction Hash / TxID string</b> in text format.\n"
-            "2️⃣ Send the transaction confirmation <b>Screenshot image</b> right after."
-        )
-    else:
-        prompt_text = (
-            "<b>📝 Verification Requirements (UPI Fiat)</b>\n\n"
-            "1️⃣ Send your <b>12-digit numeric UTR / Reference Number</b> in text format.\n"
-            "2️⃣ Send the bank receipt <b>Screenshot image</b> right after."
-        )
+    # ✅ FIX: Updated prompt text to explicitly state that the screenshot is mandatory and text ID is optional
+    prompt_text = (
+        "<b>📝 Verification Requirements</b>\n\n"
+        "📸 <b>📸 Send the Payment Confirmation Screenshot image now (Mandatory).</b>\n\n"
+        "ℹ️ <i>Optional: You can also type and send your UTR number / TxID string if you want, otherwise just the screenshot is enough!</i>"
+    )
         
     await callback.message.reply_text(prompt_text)
     await callback.answer()
@@ -487,7 +481,7 @@ async def livegram_reply_routing_handler(client: Client, message: Message):
         logging.exception(f"Livegram message delivery routing fatal: {e}")
         await message.reply_text(f"❌ <b>Delivery Exception Failure:</b> <code>{html.escape(str(e))}</code>")
 
-# ✅ FIXED INTAKE DATA PIPELINE (Proper step-by-step guidance for TxID and Photo)
+# ✅ FIXED INTAKE DATA PIPELINE (Screenshot is mandatory, Text ID/UTR is fully optional)
 @bot.on_message(filters.private & ~filters.command(["start", "help", "broadcast", "status", "ban", "unban"]))
 async def forward_to_admin_manual_check(client: Client, message: Message):
     if await check_banned_middleware(message): return
@@ -500,6 +494,8 @@ async def forward_to_admin_manual_check(client: Client, message: Message):
         return
 
     content = message.text if message.text else message.caption
+    
+    # 1. If text or caption contains a UTR/TxID, capture it optionally
     if content:
         detected_utr = None
         upi_match = re.search(r"\b\d{12}\b", content)
@@ -518,25 +514,25 @@ async def forward_to_admin_manual_check(client: Client, message: Message):
             state["utr"] = detected_utr
             await DBManager.set_user_state(user_id, state)
 
+    # 2. If message contains a photo, it's the mandatory screenshot
     if message.photo:
         photo_id = message.photo.file_id
         state["photo"] = photo_id
         await DBManager.set_user_state(user_id, state)
 
-    # ✅ FIXED STEP LOGIC: Checking parameters cleanly and routing correct helper texts
-    if not state.get("utr") or not state.get("photo"):
+    # ✅ FIXED STEP LOGIC: ONLY check if photo exists. If no photo, keep waiting.
+    if not state.get("photo"):
         state["status"] = "COLLECTING"
         await DBManager.set_user_state(user_id, state)
-        
-        if not state.get("utr"):
-            await message.reply_text("⏳ Please provide your Reference / UTR / TxID string accurately.")
-        elif not state.get("photo"):
-            await message.reply_text("⏳ Reference captured! Please dispatch your validation Screenshot image right after.")
+        await message.reply_text("⏳ <b>Please send the payment verification Screenshot image to proceed.</b>")
         return
 
-    inserted_row_id = await DBManager.add_payment_intent(state["utr"], user_id, state["price"], state["channel_key"])
+    # If UTR wasn't provided, assign a clean auto-generated placeholder so DB index doesn't crash
+    final_utr = state.get("utr") if state.get("utr") else f"OPTIONAL_{uuid.uuid4().hex[:10].upper()}"
+
+    inserted_row_id = await DBManager.add_payment_intent(final_utr, user_id, state["price"], state["channel_key"])
     if not inserted_row_id:
-        await message.reply_text("🚫 <b>Security Exception:</b> This exact TxID/UTR database trace token already exists inside our verification pipelines.")
+        await message.reply_text("🚫 <b>Security Exception:</b> Submission conflict mismatch. Please try again.")
         return
 
     selected_channel = CHANNELS_REGISTRY[state["channel_key"]]
@@ -549,6 +545,7 @@ async def forward_to_admin_manual_check(client: Client, message: Message):
         [InlineKeyboardButton("❌ Reject Payment", callback_data=f"rejc_{inserted_row_id}")]
     ])
 
+    display_utr = state.get("utr") if state.get("utr") else "Not Provided (Optional)"
     safe_admin_name = html.escape(message.from_user.first_name or "User")
     admin_caption = (
         f"💰 <b>New Payment Verification Pending!</b>\n\n"
@@ -556,7 +553,7 @@ async def forward_to_admin_manual_check(client: Client, message: Message):
         f"🆔 <b>ID:</b> <code>{user_id}</code>\n"
         f"📦 <b>Target Channel:</b> {channel_name}\n"
         f"💳 <b>Gate:</b> {method_used}\n"
-        f"🔢 <b>Ref/TxID:</b> <code>{state['utr']}</code>"
+        f"🔢 <b>Ref/TxID:</b> <code>{display_utr}</code>"
     )
 
     log_message_node = await bot.send_photo(
@@ -647,5 +644,3 @@ async def main():
 
 if __name__ == "__main__":
     loop.run_until_complete(main())
-    
-                
