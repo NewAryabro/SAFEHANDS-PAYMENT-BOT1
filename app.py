@@ -77,11 +77,11 @@ CH2_HOT = -1001515841046
 CHANNELS_REGISTRY = {
     "game_comp": {"name": "Game Competition 🎮", "price_inr": 99, "price_usd": 1.20, "target_id": CH1_GAME},
     "hot_stuff": {"name": "Hot Stuff & Heroine stuff 🥵", "price_inr": 199, "price_usd": 2.40, "target_id": CH2_HOT},
-    "slot_3": {"name": "Premium Slots 3 ✨", "price_inr": 149, "price_usd": 1.80, "target_id": CH3_EDITABLE},
-    "slot_4": {"name": "Premium Slots 4 🚀", "price_inr": 299, "price_usd": 3.60, "target_id": CH4_EDITABLE},
-    "slot_5": {"name": "Premium Slots 5 🎬", "price_inr": 399, "price_usd": 4.80, "target_id": CH5_EDITABLE},
-    "slot_6": {"name": "Premium Slots 6 💎", "price_inr": 499, "price_usd": 6.00, "target_id": CH6_EDITABLE},
-    "slot_7": {"name": "Premium Slots 7 🔥", "price_inr": 599, "price_usd": 7.20, "target_id": CH7_EDITABLE}
+   # "slot_3": {"name": "Premium Slots 3 ✨", "price_inr": 149, "price_usd": 1.80, "target_id": CH3_EDITABLE},
+   # "slot_4": {"name": "Premium Slots 4 🚀", "price_inr": 299, "price_usd": 3.60, "target_id": CH4_EDITABLE},
+   # "slot_5": {"name": "Premium Slots 5 🎬", "price_inr": 399, "price_usd": 4.80, "target_id": CH5_EDITABLE},
+   # "slot_6": {"name": "Premium Slots 6 💎", "price_inr": 499, "price_usd": 6.00, "target_id": CH6_EDITABLE},
+   # "slot_7": {"name": "Premium Slots 7 🔥", "price_inr": 599, "price_usd": 7.20, "target_id": CH7_EDITABLE}
 }
 
 bot = Client(
