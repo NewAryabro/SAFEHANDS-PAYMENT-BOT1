@@ -75,8 +75,8 @@ CH2_HOT = -1001515841046
 #CH7_EDITABLE = -1001444444444
 
 CHANNELS_REGISTRY = {
-    "game_comp": {"name": "Game Competition 🎮", "price_inr": 99, "price_usd": 1.20, "target_id": CH1_GAME},
-    "hot_stuff": {"name": "Hot Stuff & Heroine stuff 🥵", "price_inr": 199, "price_usd": 2.40, "target_id": CH2_HOT},
+    "game_comp": {"name": "GAME COMPETITION 🎮", "price_inr": 30, "price_usd": 0.31, "target_id": CH1_GAME},
+    "hot_stuff": {"name": "Hot & Heroine Stuff 🥵", "price_inr": 50, "price_usd": 0.52, "target_id": CH2_HOT},
    # "slot_3": {"name": "Premium Slots 3 ✨", "price_inr": 149, "price_usd": 1.80, "target_id": CH3_EDITABLE},
    # "slot_4": {"name": "Premium Slots 4 🚀", "price_inr": 299, "price_usd": 3.60, "target_id": CH4_EDITABLE},
    # "slot_5": {"name": "Premium Slots 5 🎬", "price_inr": 399, "price_usd": 4.80, "target_id": CH5_EDITABLE},
