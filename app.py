@@ -249,7 +249,6 @@ async def start_handler(client: Client, message: Message):
     buttons_list.append([InlineKeyboardButton("📞 Support Desk", url=f"tg://user?id={ADMIN_ID}")])
     
     keyboard = InlineKeyboardMarkup(buttons_list)
-    # ✅ FIX: Highly clean, sharp and prominent text layout alignment (No loose blockquotes)
     await message.reply_text(
         f"👋 <b>Hello {safe_first_name},</b>\n\n"
         f"Welcome to Premium Channels Gateway Portal.\n\n"
@@ -278,14 +277,12 @@ async def plan_selection_handler(client: Client, callback: CallbackQuery):
     try:
         qr_stream = get_local_upi_qr(selected_channel["price_inr"])
         
-        # ✅ FIX: Replaced broad choices. Dynamic isolated verification path buttons only (Hides editable slots matrix)
         keyboard = InlineKeyboardMarkup([
             [InlineKeyboardButton("🪙 Pay in USDT (Crypto)", callback_data=f"cryptolink_{channel_key}")],
             [InlineKeyboardButton("✅ Proceed to Verify Payment", callback_data="confirm_paid")]
         ])
         
-        await callback.message.reply_photo(photo=qr_stream)
-        
+        # ✅ FIX: Combined UPI QR Image and Invoice text directly into a single reply_photo using caption parameters
         invoice_text = (
             f"<b>🤖 Payment Session Invoice Generated</b>\n"
             f"━━━━━━━━━━━━━━━━━━━━\n\n"
@@ -294,7 +291,8 @@ async def plan_selection_handler(client: Client, callback: CallbackQuery):
             f"📌 <b>UPI ID Ref:</b> <code>{UPI_ID}</code>\n\n"
             f"👉 Complete your transfer, capture a screenshot confirmation dashboard, then click verify button down below."
         )
-        await callback.message.reply_text(invoice_text, reply_markup=keyboard)
+        
+        await callback.message.reply_photo(photo=qr_stream, caption=invoice_text, reply_markup=keyboard)
         
         try: await callback.message.delete()
         except Exception: pass
@@ -327,7 +325,6 @@ async def crypto_link_alert_handler(client: Client, callback: CallbackQuery):
     state["method"] = "CRYPTO"
     await DBManager.set_user_state(callback.from_user.id, state)
     
-    # ✅ FIX: Pristine dynamic absolute text visualization maps
     crypto_text = (
         f"<b>🪙 USDT Secure Invoicing Layer Assets</b>\n"
         f"━━━━━━━━━━━━━━━━━━━━\n\n"
@@ -346,6 +343,7 @@ async def crypto_link_alert_handler(client: Client, callback: CallbackQuery):
     try: await callback.message.delete()
     except Exception: pass
     await callback.answer()
+
 @bot.on_callback_query(filters.regex("^confirm_paid$"))
 async def instruct_user_inputs(client: Client, callback: CallbackQuery):
     if await DBManager.is_user_banned(callback.from_user.id):
